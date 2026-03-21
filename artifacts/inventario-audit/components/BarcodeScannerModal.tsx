@@ -2,11 +2,13 @@ import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import React, { useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useColorScheme,
@@ -19,6 +21,85 @@ interface BarcodeScannerModalProps {
   onClose: () => void;
   onScan: (value: string) => void;
   title?: string;
+}
+
+/** Fallback para web: input manual de código */
+function WebBarcodeInput({
+  visible,
+  onClose,
+  onScan,
+  title,
+}: BarcodeScannerModalProps) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const C = isDark ? Colors.dark : Colors.light;
+  const [value, setValue] = useState("");
+
+  const handleConfirm = () => {
+    const clean = value.trim();
+    if (!clean) return;
+    onScan(clean);
+    setValue("");
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView behavior="padding" style={styles.webOverlay}>
+        <View style={[styles.webBox, { backgroundColor: C.surface }]}>
+          <View style={styles.webHeader}>
+            <Feather name="maximize" size={22} color={C.primary} />
+            <Text style={[styles.webTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+              {title ?? "Ingresar código"}
+            </Text>
+          </View>
+          <Text style={[styles.webHint, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+            Escribe el código de barras o IMEI manualmente
+          </Text>
+          <TextInput
+            value={value}
+            onChangeText={setValue}
+            placeholder="Ej: 7501234567890"
+            placeholderTextColor={C.textMuted}
+            autoFocus
+            style={[
+              styles.webInput,
+              {
+                backgroundColor: C.surfaceElevated,
+                borderColor: C.primary,
+                color: C.text,
+                fontFamily: "Inter_400Regular",
+              },
+            ]}
+            returnKeyType="done"
+            onSubmitEditing={handleConfirm}
+          />
+          <View style={styles.webBtns}>
+            <TouchableOpacity
+              style={[styles.webBtn, { borderColor: C.surfaceBorder, borderWidth: 1 }]}
+              onPress={() => { setValue(""); onClose(); }}
+            >
+              <Text style={[styles.webBtnText, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                Cancelar
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.webBtn, { backgroundColor: C.primary }]}
+              onPress={handleConfirm}
+            >
+              <Text style={[styles.webBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
+                Confirmar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 }
 
 export function BarcodeScannerModal({
@@ -34,6 +115,18 @@ export function BarcodeScannerModal({
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
 
+  // Web: mostrar input manual en vez de cámara
+  if (Platform.OS === "web") {
+    return (
+      <WebBarcodeInput
+        visible={visible}
+        onClose={onClose}
+        onScan={onScan}
+        title={title}
+      />
+    );
+  }
+
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
@@ -46,10 +139,14 @@ export function BarcodeScannerModal({
     onClose();
   };
 
-  if (Platform.OS === "web") return null;
-
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={handleClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={false}
+      statusBarTranslucent
+      onRequestClose={handleClose}
+    >
       <View style={[styles.container, { backgroundColor: "#000" }]}>
         {!permission?.granted ? (
           <View style={[styles.permContainer, { paddingTop: insets.top + 20 }]}>
@@ -63,6 +160,12 @@ export function BarcodeScannerModal({
               onPress={requestPermission}
             >
               <Text style={styles.permBtnText}>Permitir acceso</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.permBtn, { backgroundColor: "rgba(255,255,255,0.15)", marginTop: 0 }]}
+              onPress={handleClose}
+            >
+              <Text style={styles.permBtnText}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -88,6 +191,8 @@ export function BarcodeScannerModal({
               }}
               onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
             />
+
+            {/* Barra superior */}
             <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
               <Pressable onPress={handleClose} style={styles.closeBtn}>
                 <Feather name="x" size={24} color="#fff" />
@@ -95,6 +200,8 @@ export function BarcodeScannerModal({
               <Text style={styles.topTitle}>{title}</Text>
               <View style={styles.placeholder} />
             </View>
+
+            {/* Marco de escaneo */}
             <View style={styles.scanArea}>
               <View style={styles.scanFrame}>
                 <View style={[styles.corner, styles.cornerTL]} />
@@ -103,7 +210,7 @@ export function BarcodeScannerModal({
                 <View style={[styles.corner, styles.cornerBR]} />
               </View>
               <Text style={styles.scanHint}>
-                {scanned ? "Código detectado!" : "Apunta al código de barras"}
+                {scanned ? "¡Código detectado!" : "Apunta al código de barras"}
               </Text>
             </View>
           </>
@@ -118,9 +225,7 @@ const CORNER = 20;
 const BORDER = 3;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   permContainer: {
     flex: 1,
     alignItems: "center",
@@ -145,6 +250,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     marginTop: 8,
+    width: "100%",
+    alignItems: "center",
   },
   permBtnText: {
     color: "#fff",
@@ -174,9 +281,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Inter_600SemiBold",
   },
-  placeholder: {
-    width: 40,
-  },
+  placeholder: { width: 40 },
   scanArea: {
     flex: 1,
     alignItems: "center",
@@ -194,37 +299,59 @@ const styles = StyleSheet.create({
     height: CORNER,
     borderColor: "#00D4FF",
   },
-  cornerTL: {
-    top: 0,
-    left: 0,
-    borderTopWidth: BORDER,
-    borderLeftWidth: BORDER,
-    borderTopLeftRadius: 4,
-  },
-  cornerTR: {
-    top: 0,
-    right: 0,
-    borderTopWidth: BORDER,
-    borderRightWidth: BORDER,
-    borderTopRightRadius: 4,
-  },
-  cornerBL: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: BORDER,
-    borderLeftWidth: BORDER,
-    borderBottomLeftRadius: 4,
-  },
-  cornerBR: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: BORDER,
-    borderRightWidth: BORDER,
-    borderBottomRightRadius: 4,
-  },
+  cornerTL: { top: 0, left: 0, borderTopWidth: BORDER, borderLeftWidth: BORDER, borderTopLeftRadius: 4 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: BORDER, borderRightWidth: BORDER, borderTopRightRadius: 4 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: BORDER, borderLeftWidth: BORDER, borderBottomLeftRadius: 4 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: BORDER, borderRightWidth: BORDER, borderBottomRightRadius: 4 },
   scanHint: {
     color: "rgba(255,255,255,0.9)",
     fontSize: 14,
     fontFamily: "Inter_500Medium",
   },
+  // Web fallback styles
+  webOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  webBox: {
+    width: "85%",
+    maxWidth: 360,
+    borderRadius: 20,
+    padding: 24,
+    gap: 12,
+  },
+  webHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  webTitle: {
+    fontSize: 17,
+  },
+  webHint: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  webInput: {
+    borderWidth: 2,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 16,
+    marginTop: 4,
+  },
+  webBtns: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  webBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  webBtnText: { fontSize: 15 },
 });
