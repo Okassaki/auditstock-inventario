@@ -12,27 +12,44 @@ export interface ExcelProducto {
   imeis_sistema?: string;
 }
 
-/** Lee un archivo como base64 compatible con web y nativo */
-async function leerArchivoBase64(uri: string): Promise<string> {
+/**
+ * Convierte una cadena base64 a Uint8Array sin usar Buffer.
+ * Compatible con Hermes (motor JS de Android en APK nativo).
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Convierte un Uint8Array a cadena base64 sin usar Buffer.
+ * Procesa en chunks para evitar stack overflow con archivos grandes.
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+/** Lee un archivo como Uint8Array compatible con web y nativo */
+async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
   if (Platform.OS === "web") {
-    // En web la URI es un blob:// o data URL — usamos fetch + FileReader
     const response = await fetch(uri);
-    const blob = await response.blob();
-    return new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        // Quitar el prefijo "data:...;base64,"
-        const base64 = dataUrl.split(",")[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
   } else {
-    return FileSystem.readAsStringAsync(uri, {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: FileSystem.EncodingType.Base64,
     });
+    return base64ToUint8Array(base64);
   }
 }
 
@@ -49,12 +66,11 @@ export async function parsearExcel(uri: string): Promise<{
   const productos: ExcelProducto[] = [];
 
   try {
-    const base64 = await leerArchivoBase64(uri);
-    const workbook = read(base64, { type: "base64" });
+    const uint8Array = await leerArchivoComoArray(uri);
+    const workbook = read(uint8Array, { type: "array" });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 
-    // header:1 → array de arrays (filas crudas por posición)
     const rows = utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
 
     if (rows.length === 0) {
@@ -62,7 +78,6 @@ export async function parsearExcel(uri: string): Promise<{
       return { productos, errores };
     }
 
-    // Detectar si la primera fila es encabezado (no numérica en columna C)
     const primeraFila = rows[0] as unknown[];
     const primeraColC = String(primeraFila[2] ?? "").trim().toLowerCase();
     const tieneEncabezado =
@@ -78,13 +93,11 @@ export async function parsearExcel(uri: string): Promise<{
       const row = rows[i] as unknown[];
       const rowNum = i + 1;
 
-      // Columnas por posición: A=0, B=1, C=2, D=3
       const codigo = String(row[0] ?? "").trim();
       const nombre = String(row[1] ?? "").trim();
       const stockRaw = row[2];
       const imei = String(row[3] ?? "").trim();
 
-      // Saltar filas completamente vacías
       if (!codigo && !nombre && !stockRaw) continue;
 
       if (!codigo) {
@@ -176,8 +189,7 @@ export async function exportarExcel(
   const fileName = `auditoria_${nombreFiltro}_${fecha}.xlsx`;
 
   if (Platform.OS === "web") {
-    // En web: descarga directa por el navegador
-    const wbout = write(wb, { type: "array", bookType: "xlsx" });
+    const wbout = write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
     const blob = new Blob([wbout], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
@@ -190,10 +202,10 @@ export async function exportarExcel(
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } else {
-    // En nativo: escribir y compartir
-    const wbout = write(wb, { type: "base64", bookType: "xlsx" });
+    const wbout = write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
+    const base64 = uint8ArrayToBase64(wbout);
     const filePath = `${FileSystem.cacheDirectory}${fileName}`;
-    await FileSystem.writeAsStringAsync(filePath, wbout, {
+    await FileSystem.writeAsStringAsync(filePath, base64, {
       encoding: FileSystem.EncodingType.Base64,
     });
     const canShare = await Sharing.isAvailableAsync();
