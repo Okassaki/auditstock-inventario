@@ -452,7 +452,7 @@ export default function InicioScreen() {
         transparent
         onRequestClose={() => setAuditoriaAEliminar(null)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
           <View style={[styles.confirmBox, { backgroundColor: C.surface }]}>
             <Feather name="trash-2" size={32} color="#EF4444" style={{ marginBottom: 12 }} />
             <Text style={[styles.confirmTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
