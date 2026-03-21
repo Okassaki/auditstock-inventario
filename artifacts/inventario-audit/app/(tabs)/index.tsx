@@ -1,8 +1,8 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -52,9 +52,12 @@ export default function InicioScreen() {
     setAuditorias(list);
   }, [cargarAuditorias]);
 
-  useEffect(() => {
-    cargar();
-  }, [cargar, auditoriaActual]);
+  // Recargar la lista cada vez que el usuario vuelve a esta pestaña
+  useFocusEffect(
+    useCallback(() => {
+      cargar();
+    }, [cargar])
+  );
 
   const handleCrear = async () => {
     const nombre = nombreNueva.trim();
