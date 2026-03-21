@@ -27,14 +27,12 @@ function base64ToUint8Array(base64: string): Uint8Array {
 
 /**
  * Convierte un Uint8Array a cadena base64 sin usar Buffer.
- * Procesa en chunks para evitar stack overflow con archivos grandes.
+ * Usa loop byte por byte para máxima compatibilidad con Hermes.
  */
 function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = "";
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
 }
