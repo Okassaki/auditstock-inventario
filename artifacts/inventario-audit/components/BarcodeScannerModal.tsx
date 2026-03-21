@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -102,11 +103,12 @@ function WebBarcodeInput({
   );
 }
 
-export function BarcodeScannerModal({
+/** Escáner nativo con CameraView */
+function NativeScannerModal({
   visible,
   onClose,
   onScan,
-  title = "Escanear código",
+  title,
 }: BarcodeScannerModalProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -115,17 +117,19 @@ export function BarcodeScannerModal({
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
 
-  // Web: mostrar input manual en vez de cámara
-  if (Platform.OS === "web") {
-    return (
-      <WebBarcodeInput
-        visible={visible}
-        onClose={onClose}
-        onScan={onScan}
-        title={title}
-      />
-    );
-  }
+  // Pedir permiso automáticamente cuando el modal se abre
+  useEffect(() => {
+    if (visible && permission !== null && !permission.granted && permission.canAskAgain) {
+      requestPermission();
+    }
+  }, [visible, permission]);
+
+  // Resetear estado al cerrar
+  useEffect(() => {
+    if (!visible) {
+      setScanned(false);
+    }
+  }, [visible]);
 
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (scanned) return;
@@ -139,6 +143,111 @@ export function BarcodeScannerModal({
     onClose();
   };
 
+  const renderContent = () => {
+    // Cargando estado de permisos
+    if (permission === null) {
+      return (
+        <View style={[styles.permContainer, { paddingTop: insets.top + 20 }]}>
+          <ActivityIndicator size="large" color={C.primary} />
+          <Text style={styles.permDesc}>Verificando permisos de cámara...</Text>
+        </View>
+      );
+    }
+
+    // Permiso denegado permanentemente
+    if (!permission.granted && !permission.canAskAgain) {
+      return (
+        <View style={[styles.permContainer, { paddingTop: insets.top + 20 }]}>
+          <Feather name="camera-off" size={48} color="#fff" />
+          <Text style={styles.permTitle}>Permiso denegado</Text>
+          <Text style={styles.permDesc}>
+            El permiso de cámara fue denegado. Ve a Configuración → Aplicaciones → AuditStock → Permisos y activa la Cámara.
+          </Text>
+          <TouchableOpacity
+            style={[styles.permBtn, { backgroundColor: "rgba(255,255,255,0.15)" }]}
+            onPress={handleClose}
+          >
+            <Text style={styles.permBtnText}>Cerrar</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Permiso no concedido (se puede solicitar)
+    if (!permission.granted) {
+      return (
+        <View style={[styles.permContainer, { paddingTop: insets.top + 20 }]}>
+          <ActivityIndicator size="large" color={C.primary} />
+          <Text style={styles.permTitle}>Solicitando permiso...</Text>
+          <Text style={styles.permDesc}>
+            Acepta el permiso de cámara en el diálogo del sistema para escanear códigos.
+          </Text>
+          <TouchableOpacity
+            style={[styles.permBtn, { backgroundColor: C.primary }]}
+            onPress={requestPermission}
+          >
+            <Text style={styles.permBtnText}>Permitir cámara</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.permBtn, { backgroundColor: "rgba(255,255,255,0.15)", marginTop: 0 }]}
+            onPress={handleClose}
+          >
+            <Text style={styles.permBtnText}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Permiso concedido: mostrar cámara
+    return (
+      <>
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          barcodeScannerSettings={{
+            barcodeTypes: [
+              "qr",
+              "ean13",
+              "ean8",
+              "code128",
+              "code39",
+              "code93",
+              "upc_e",
+              "upc_a",
+              "itf14",
+              "datamatrix",
+              "pdf417",
+              "aztec",
+            ],
+          }}
+          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+        />
+
+        {/* Barra superior */}
+        <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+          <Pressable onPress={handleClose} style={styles.closeBtn}>
+            <Feather name="x" size={24} color="#fff" />
+          </Pressable>
+          <Text style={styles.topTitle}>{title}</Text>
+          <View style={styles.placeholder} />
+        </View>
+
+        {/* Marco de escaneo */}
+        <View style={styles.scanArea}>
+          <View style={styles.scanFrame}>
+            <View style={[styles.corner, styles.cornerTL]} />
+            <View style={[styles.corner, styles.cornerTR]} />
+            <View style={[styles.corner, styles.cornerBL]} />
+            <View style={[styles.corner, styles.cornerBR]} />
+          </View>
+          <Text style={styles.scanHint}>
+            {scanned ? "¡Código detectado!" : "Apunta al código de barras"}
+          </Text>
+        </View>
+      </>
+    );
+  };
+
   return (
     <Modal
       visible={visible}
@@ -148,76 +257,17 @@ export function BarcodeScannerModal({
       onRequestClose={handleClose}
     >
       <View style={[styles.container, { backgroundColor: "#000" }]}>
-        {!permission?.granted ? (
-          <View style={[styles.permContainer, { paddingTop: insets.top + 20 }]}>
-            <Feather name="camera-off" size={48} color="#fff" />
-            <Text style={styles.permTitle}>Acceso a cámara requerido</Text>
-            <Text style={styles.permDesc}>
-              Necesitamos acceso a la cámara para escanear códigos de barras.
-            </Text>
-            <TouchableOpacity
-              style={[styles.permBtn, { backgroundColor: C.primary }]}
-              onPress={requestPermission}
-            >
-              <Text style={styles.permBtnText}>Permitir acceso</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.permBtn, { backgroundColor: "rgba(255,255,255,0.15)", marginTop: 0 }]}
-              onPress={handleClose}
-            >
-              <Text style={styles.permBtnText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <CameraView
-              style={StyleSheet.absoluteFill}
-              facing="back"
-              barcodeScannerSettings={{
-                barcodeTypes: [
-                  "qr",
-                  "ean13",
-                  "ean8",
-                  "code128",
-                  "code39",
-                  "code93",
-                  "upc_e",
-                  "upc_a",
-                  "itf14",
-                  "datamatrix",
-                  "pdf417",
-                  "aztec",
-                ],
-              }}
-              onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-            />
-
-            {/* Barra superior */}
-            <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
-              <Pressable onPress={handleClose} style={styles.closeBtn}>
-                <Feather name="x" size={24} color="#fff" />
-              </Pressable>
-              <Text style={styles.topTitle}>{title}</Text>
-              <View style={styles.placeholder} />
-            </View>
-
-            {/* Marco de escaneo */}
-            <View style={styles.scanArea}>
-              <View style={styles.scanFrame}>
-                <View style={[styles.corner, styles.cornerTL]} />
-                <View style={[styles.corner, styles.cornerTR]} />
-                <View style={[styles.corner, styles.cornerBL]} />
-                <View style={[styles.corner, styles.cornerBR]} />
-              </View>
-              <Text style={styles.scanHint}>
-                {scanned ? "¡Código detectado!" : "Apunta al código de barras"}
-              </Text>
-            </View>
-          </>
-        )}
+        {renderContent()}
       </View>
     </Modal>
   );
+}
+
+export function BarcodeScannerModal(props: BarcodeScannerModalProps) {
+  if (Platform.OS === "web") {
+    return <WebBarcodeInput {...props} />;
+  }
+  return <NativeScannerModal {...props} />;
 }
 
 const FRAME = 250;
