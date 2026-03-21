@@ -44,6 +44,7 @@ export default function InicioScreen() {
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
+  const [auditoriaAEliminar, setAuditoriaAEliminar] = useState<Auditoria | null>(null);
 
   const cargar = useCallback(async () => {
     const list = await cargarAuditorias();
@@ -148,22 +149,15 @@ export default function InicioScreen() {
   };
 
   const handleEliminar = (aud: Auditoria) => {
-    Alert.alert(
-      "Eliminar auditoría",
-      `¿Eliminar "${aud.nombre}" y todos sus datos?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: async () => {
-            await eliminarAuditoria(aud.id);
-            await cargar();
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          },
-        },
-      ]
-    );
+    setAuditoriaAEliminar(aud);
+  };
+
+  const confirmarEliminar = async () => {
+    if (!auditoriaAEliminar) return;
+    await eliminarAuditoria(auditoriaAEliminar.id);
+    setAuditoriaAEliminar(null);
+    await cargar();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   };
 
   const progreso = auditoriaActual
@@ -439,6 +433,48 @@ export default function InicioScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal confirmación eliminar — funciona en web y nativo */}
+      <Modal
+        visible={!!auditoriaAEliminar}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAuditoriaAEliminar(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.confirmBox, { backgroundColor: C.surface }]}>
+            <Feather name="trash-2" size={32} color="#EF4444" style={{ marginBottom: 12 }} />
+            <Text style={[styles.confirmTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+              Eliminar auditoría
+            </Text>
+            <Text style={[styles.confirmDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+              ¿Eliminar{" "}
+              <Text style={{ fontFamily: "Inter_600SemiBold", color: C.text }}>
+                "{auditoriaAEliminar?.nombre}"
+              </Text>
+              {" "}y todos sus datos? Esta acción no se puede deshacer.
+            </Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: C.surfaceBorder }]}
+                onPress={() => setAuditoriaAEliminar(null)}
+              >
+                <Text style={[styles.confirmBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: "#EF4444" }]}
+                onPress={confirmarEliminar}
+              >
+                <Text style={[styles.confirmBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
+                  Eliminar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -594,4 +630,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnPrimaryText: { color: "#fff", fontSize: 15 },
+  confirmBox: {
+    width: "85%",
+    maxWidth: 360,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    gap: 8,
+  },
+  confirmTitle: { fontSize: 18, marginBottom: 4 },
+  confirmDesc: { fontSize: 14, lineHeight: 20, textAlign: "center" },
+  confirmButtons: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+    width: "100%",
+  },
+  confirmBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  confirmBtnText: { fontSize: 15 },
 });
