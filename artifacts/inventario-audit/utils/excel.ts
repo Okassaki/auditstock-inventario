@@ -203,6 +203,10 @@ export async function exportarExcel(
         dialogTitle: `Exportar ${nombreAuditoria}`,
         UTI: "com.microsoft.excel.xlsx",
       });
+    } else {
+      throw new Error(
+        "La función de compartir no está disponible en este dispositivo."
+      );
     }
   }
 }

@@ -1,3 +1,4 @@
+import "@/polyfills";
 import {
   Inter_400Regular,
   Inter_500Medium,
