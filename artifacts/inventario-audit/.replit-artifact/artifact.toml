@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Auditoría de Inventario"
+version = "1.0.0"
+id = "artifacts/inventario-audit"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 18917
+
+[services.development]
+run = "pnpm --filter @workspace/inventario-audit run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/inventario-audit", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/inventario-audit", "run", "serve" ]
+
+[services.env]
+PORT = "18917"
+BASE_PATH = "/"
