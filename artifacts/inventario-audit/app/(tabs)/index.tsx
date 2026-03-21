@@ -154,10 +154,21 @@ export default function InicioScreen() {
 
   const confirmarEliminar = async () => {
     if (!auditoriaAEliminar) return;
-    await eliminarAuditoria(auditoriaAEliminar.id);
+    const idAEliminar = auditoriaAEliminar.id;
+    // Cerrar modal antes de la operación para evitar estados colgados
     setAuditoriaAEliminar(null);
-    await cargar();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    try {
+      await eliminarAuditoria(idAEliminar);
+      await cargar();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } catch (e) {
+      Alert.alert(
+        "No se pudo eliminar",
+        "Ocurrió un error al eliminar la auditoría. Intenta de nuevo.",
+        [{ text: "OK" }]
+      );
+      await cargar();
+    }
   };
 
   const progreso = auditoriaActual

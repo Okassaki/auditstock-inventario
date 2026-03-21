@@ -151,6 +151,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           dbRef.current = database;
           await database.execAsync(`
             PRAGMA journal_mode = WAL;
+            PRAGMA foreign_keys = ON;
             CREATE TABLE IF NOT EXISTS auditorias (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               nombre TEXT NOT NULL,
@@ -405,19 +406,32 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   );
 
   const eliminarAuditoria = useCallback(async (id: number) => {
-    if (dbRef.current) {
-      await dbRef.current.runAsync("DELETE FROM auditorias WHERE id = ?", [id]);
-    } else {
-      storeRef.current.auds = storeRef.current.auds.filter((a) => a.id !== id);
-      storeRef.current.prods = storeRef.current.prods.filter((p) => p.auditoria_id !== id);
-      await Promise.all([
-        saveAuditorias(storeRef.current.auds),
-        saveProductos(storeRef.current.prods),
-      ]);
-    }
-    if (auditoriaActual?.id === id) {
-      setAuditoriaActual(null);
-      setProductos([]);
+    try {
+      if (dbRef.current) {
+        // Eliminar productos primero (por si foreign_keys no está activo)
+        await dbRef.current.runAsync(
+          "DELETE FROM productos WHERE auditoria_id = ?",
+          [id]
+        );
+        await dbRef.current.runAsync(
+          "DELETE FROM auditorias WHERE id = ?",
+          [id]
+        );
+      } else {
+        storeRef.current.auds = storeRef.current.auds.filter((a) => a.id !== id);
+        storeRef.current.prods = storeRef.current.prods.filter((p) => p.auditoria_id !== id);
+        await Promise.all([
+          saveAuditorias(storeRef.current.auds),
+          saveProductos(storeRef.current.prods),
+        ]);
+      }
+      if (auditoriaActual?.id === id) {
+        setAuditoriaActual(null);
+        setProductos([]);
+      }
+    } catch (err) {
+      console.error("Error eliminando auditoría:", err);
+      throw new Error(`No se pudo eliminar la auditoría: ${err}`);
     }
   }, [auditoriaActual]);
 
