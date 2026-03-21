@@ -56,7 +56,6 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
-    "expo-barcode-scanner": "^13.0.1",
     "expo-camera": "^17.0.10",
     "expo-document-picker": "^14.0.8",
     "expo-file-system": "^19.0.21",
