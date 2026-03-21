@@ -14,6 +14,9 @@
     "typescript": "~5.9.2"
   },
   "dependencies": {
-    "@replit/connectors-sdk": "^0.3.0"
+    "@isomorphic-git/lightning-fs": "^4.6.2",
+    "@replit/connectors-sdk": "^0.3.0",
+    "isomorphic-git": "^1.37.4",
+    "libsodium-wrappers": "^0.8.2"
   }
 }
