@@ -35,6 +35,7 @@ export default function InicioScreen() {
     cargarAuditoria,
     auditoriaActual,
     eliminarAuditoria,
+    limpiarAuditoriaActual,
     importarProductos,
   } = useDatabase();
 
@@ -154,19 +155,28 @@ export default function InicioScreen() {
 
   const confirmarEliminar = async () => {
     if (!auditoriaAEliminar) return;
+    const eraActiva = auditoriaActual?.id === auditoriaAEliminar.id;
     const idAEliminar = auditoriaAEliminar.id;
-    // Cerrar modal antes de la operación para evitar estados colgados
+
+    // 1. Cerrar modal primero
     setAuditoriaAEliminar(null);
+
     try {
+      // 2. Borrar en base de datos
       await eliminarAuditoria(idAEliminar);
+
+      // 3. Si era la auditoría activa, limpiar estado AQUÍ (no desde dentro de eliminarAuditoria)
+      if (eraActiva) {
+        limpiarAuditoriaActual();
+      }
+
+      // 4. Recargar la lista
       await cargar();
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     } catch (e) {
-      Alert.alert(
-        "No se pudo eliminar",
-        "Ocurrió un error al eliminar la auditoría. Intenta de nuevo.",
-        [{ text: "OK" }]
-      );
+      console.error("Error al eliminar:", e);
+      Alert.alert("No se pudo eliminar", "Ocurrió un error. Intenta de nuevo.");
       await cargar();
     }
   };

@@ -113,6 +113,7 @@ interface DBContextValue {
     imeisFisicos?: string[]
   ) => Promise<void>;
   eliminarAuditoria: (id: number) => Promise<void>;
+  limpiarAuditoriaActual: () => void;
   detectarInconsistencias: () => Inconsistencia[];
   refreshProductos: () => Promise<void>;
 }
@@ -405,35 +406,31 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     [refreshProductos]
   );
 
+  // Solo hace la operación de datos — sin tocar estado React
   const eliminarAuditoria = useCallback(async (id: number) => {
-    try {
-      if (dbRef.current) {
-        // Eliminar productos primero (por si foreign_keys no está activo)
-        await dbRef.current.runAsync(
-          "DELETE FROM productos WHERE auditoria_id = ?",
-          [id]
-        );
-        await dbRef.current.runAsync(
-          "DELETE FROM auditorias WHERE id = ?",
-          [id]
-        );
-      } else {
-        storeRef.current.auds = storeRef.current.auds.filter((a) => a.id !== id);
-        storeRef.current.prods = storeRef.current.prods.filter((p) => p.auditoria_id !== id);
-        await Promise.all([
-          saveAuditorias(storeRef.current.auds),
-          saveProductos(storeRef.current.prods),
-        ]);
-      }
-      if (auditoriaActual?.id === id) {
-        setAuditoriaActual(null);
-        setProductos([]);
-      }
-    } catch (err) {
-      console.error("Error eliminando auditoría:", err);
-      throw new Error(`No se pudo eliminar la auditoría: ${err}`);
+    if (dbRef.current) {
+      await dbRef.current.runAsync(
+        "DELETE FROM productos WHERE auditoria_id = ?",
+        [id]
+      );
+      await dbRef.current.runAsync(
+        "DELETE FROM auditorias WHERE id = ?",
+        [id]
+      );
+    } else {
+      storeRef.current.auds = storeRef.current.auds.filter((a) => a.id !== id);
+      storeRef.current.prods = storeRef.current.prods.filter((p) => p.auditoria_id !== id);
+      await saveAuditorias(storeRef.current.auds);
+      await saveProductos(storeRef.current.prods);
     }
-  }, [auditoriaActual]);
+  }, []);
+
+  // Limpia el estado React cuando se elimina la auditoría activa
+  const limpiarAuditoriaActual = useCallback(() => {
+    setAuditoriaActual(null);
+    setProductos([]);
+    setInconsistencias([]);
+  }, []);
 
   const detectarInconsistencias = useCallback((): Inconsistencia[] => {
     const result: Inconsistencia[] = [];
@@ -489,6 +486,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         importarProductos,
         actualizarConteo,
         eliminarAuditoria,
+        limpiarAuditoriaActual,
         detectarInconsistencias,
         refreshProductos,
       }}
