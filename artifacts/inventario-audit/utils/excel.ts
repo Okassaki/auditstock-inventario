@@ -25,17 +25,6 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-/**
- * Convierte un Uint8Array a cadena base64 sin usar Buffer.
- * Usa loop byte por byte para máxima compatibilidad con Hermes.
- */
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
 
 /** Lee un archivo como Uint8Array compatible con web y nativo */
 async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
@@ -200,8 +189,9 @@ export async function exportarExcel(
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } else {
-    const wbout = write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
-    const base64 = uint8ArrayToBase64(wbout);
+    // xlsx genera un binary string (cada char = un byte 0-255), btoa lo convierte a base64 sin necesidad de Buffer
+    const wbout = write(wb, { type: "binary", bookType: "xlsx" }) as string;
+    const base64 = btoa(wbout);
     const filePath = `${FileSystem.cacheDirectory}${fileName}`;
     await FileSystem.writeAsStringAsync(filePath, base64, {
       encoding: "base64" as FileSystem.EncodingType,
