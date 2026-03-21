@@ -176,7 +176,7 @@ export default function ResumenScreen() {
               >
                 <Feather name="download" size={13} color={C.primary} />
                 <Text style={[styles.exportBtnText, { color: C.primary, fontFamily: "Inter_500Medium" }]}>
-                  Todo
+                  Completo
                 </Text>
               </TouchableOpacity>
             </>
