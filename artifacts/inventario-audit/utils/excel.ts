@@ -47,7 +47,7 @@ async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
     return new Uint8Array(arrayBuffer);
   } else {
     const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: "base64" as FileSystem.EncodingType,
     });
     return base64ToUint8Array(base64);
   }
@@ -206,7 +206,7 @@ export async function exportarExcel(
     const base64 = uint8ArrayToBase64(wbout);
     const filePath = `${FileSystem.cacheDirectory}${fileName}`;
     await FileSystem.writeAsStringAsync(filePath, base64, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: "base64" as FileSystem.EncodingType,
     });
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
