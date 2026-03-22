@@ -12,19 +12,52 @@ export interface ExcelProducto {
   imeis_sistema?: string;
 }
 
+const BASE64_CHARS =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
 /**
- * Convierte una cadena base64 a Uint8Array sin usar Buffer.
- * Compatible con Hermes (motor JS de Android en APK nativo).
+ * Codifica un Uint8Array a base64 usando solo operaciones de bits.
+ * No usa btoa() ni Buffer — 100% compatible con Hermes en Android.
  */
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let result = "";
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < len ? bytes[i + 1] : 0;
+    const b2 = i + 2 < len ? bytes[i + 2] : 0;
+    result += BASE64_CHARS[b0 >> 2];
+    result += BASE64_CHARS[((b0 & 3) << 4) | (b1 >> 4)];
+    result += i + 1 < len ? BASE64_CHARS[((b1 & 15) << 2) | (b2 >> 6)] : "=";
+    result += i + 2 < len ? BASE64_CHARS[b2 & 63] : "=";
   }
-  return bytes;
+  return result;
 }
 
+/**
+ * Decodifica base64 a Uint8Array usando solo operaciones de bits.
+ * No usa atob() ni Buffer — 100% compatible con Hermes en Android.
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  const lookup = new Uint8Array(256);
+  for (let i = 0; i < BASE64_CHARS.length; i++) {
+    lookup[BASE64_CHARS.charCodeAt(i)] = i;
+  }
+  const clean = base64.replace(/=+$/, "");
+  const len = Math.floor((clean.length * 3) / 4);
+  const bytes = new Uint8Array(len);
+  let byteIndex = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const b0 = lookup[clean.charCodeAt(i)];
+    const b1 = lookup[clean.charCodeAt(i + 1)];
+    const b2 = i + 2 < clean.length ? lookup[clean.charCodeAt(i + 2)] : 0;
+    const b3 = i + 3 < clean.length ? lookup[clean.charCodeAt(i + 3)] : 0;
+    bytes[byteIndex++] = (b0 << 2) | (b1 >> 4);
+    if (i + 2 < clean.length) bytes[byteIndex++] = ((b1 & 15) << 4) | (b2 >> 2);
+    if (i + 3 < clean.length) bytes[byteIndex++] = ((b2 & 3) << 6) | b3;
+  }
+  return bytes.subarray(0, byteIndex);
+}
 
 /** Lee un archivo como Uint8Array compatible con web y nativo */
 async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
@@ -189,9 +222,9 @@ export async function exportarExcel(
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } else {
-    // xlsx genera un binary string (cada char = un byte 0-255), btoa lo convierte a base64 sin necesidad de Buffer
-    const wbout = write(wb, { type: "binary", bookType: "xlsx" }) as string;
-    const base64 = btoa(wbout);
+    // Obtener bytes del Excel y codificar a base64 con implementación propia (sin btoa/Buffer)
+    const wbout = write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
+    const base64 = uint8ArrayToBase64(wbout);
     const filePath = `${FileSystem.cacheDirectory}${fileName}`;
     await FileSystem.writeAsStringAsync(filePath, base64, {
       encoding: "base64" as FileSystem.EncodingType,
@@ -199,7 +232,8 @@ export async function exportarExcel(
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
       await Sharing.shareAsync(filePath, {
-        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         dialogTitle: `Exportar ${nombreAuditoria}`,
         UTI: "com.microsoft.excel.xlsx",
       });
