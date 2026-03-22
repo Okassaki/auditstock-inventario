@@ -1,4 +1,5 @@
-import * as FileSystem from "expo-file-system/legacy";
+import * as LegacyFS from "expo-file-system/legacy";
+import { File as FSFile } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
 import { utils, write, read } from "xlsx";
@@ -16,27 +17,8 @@ const BASE64_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /**
- * Codifica un Uint8Array a base64 usando solo operaciones de bits.
- * No usa btoa() ni Buffer — 100% compatible con Hermes en Android.
- */
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let result = "";
-  const len = bytes.length;
-  for (let i = 0; i < len; i += 3) {
-    const b0 = bytes[i];
-    const b1 = i + 1 < len ? bytes[i + 1] : 0;
-    const b2 = i + 2 < len ? bytes[i + 2] : 0;
-    result += BASE64_CHARS[b0 >> 2];
-    result += BASE64_CHARS[((b0 & 3) << 4) | (b1 >> 4)];
-    result += i + 1 < len ? BASE64_CHARS[((b1 & 15) << 2) | (b2 >> 6)] : "=";
-    result += i + 2 < len ? BASE64_CHARS[b2 & 63] : "=";
-  }
-  return result;
-}
-
-/**
  * Decodifica base64 a Uint8Array usando solo operaciones de bits.
- * No usa atob() ni Buffer — 100% compatible con Hermes en Android.
+ * Sin atob() ni Buffer — compatible con cualquier motor JS.
  */
 function base64ToUint8Array(base64: string): Uint8Array {
   const lookup = new Uint8Array(256);
@@ -66,8 +48,8 @@ async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
     const arrayBuffer = await response.arrayBuffer();
     return new Uint8Array(arrayBuffer);
   } else {
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: "base64" as FileSystem.EncodingType,
+    const base64 = await LegacyFS.readAsStringAsync(uri, {
+      encoding: "base64" as LegacyFS.EncodingType,
     });
     return base64ToUint8Array(base64);
   }
@@ -222,13 +204,15 @@ export async function exportarExcel(
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } else {
-    // Obtener bytes del Excel y codificar a base64 con implementación propia (sin btoa/Buffer)
+    // Generar bytes del Excel
     const wbout = write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
-    const base64 = uint8ArrayToBase64(wbout);
-    const filePath = `${FileSystem.cacheDirectory}${fileName}`;
-    await FileSystem.writeAsStringAsync(filePath, base64, {
-      encoding: "base64" as FileSystem.EncodingType,
-    });
+
+    // Escribir bytes directamente al disco usando la nueva API de expo-file-system
+    // Sin base64 — los bytes van directo al archivo, sin riesgo de corrupción
+    const filePath = `${LegacyFS.cacheDirectory}${fileName}`;
+    const file = new FSFile(filePath);
+    file.write(wbout.buffer as ArrayBuffer);
+
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
       await Sharing.shareAsync(filePath, {
