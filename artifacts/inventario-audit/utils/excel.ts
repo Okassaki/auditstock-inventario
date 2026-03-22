@@ -1,5 +1,5 @@
+import { Buffer } from "buffer";
 import * as LegacyFS from "expo-file-system/legacy";
-import { File as FSFile } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
 import { utils, write, read } from "xlsx";
@@ -13,34 +13,6 @@ export interface ExcelProducto {
   imeis_sistema?: string;
 }
 
-const BASE64_CHARS =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/**
- * Decodifica base64 a Uint8Array usando solo operaciones de bits.
- * Sin atob() ni Buffer — compatible con cualquier motor JS.
- */
-function base64ToUint8Array(base64: string): Uint8Array {
-  const lookup = new Uint8Array(256);
-  for (let i = 0; i < BASE64_CHARS.length; i++) {
-    lookup[BASE64_CHARS.charCodeAt(i)] = i;
-  }
-  const clean = base64.replace(/=+$/, "");
-  const len = Math.floor((clean.length * 3) / 4);
-  const bytes = new Uint8Array(len);
-  let byteIndex = 0;
-  for (let i = 0; i < clean.length; i += 4) {
-    const b0 = lookup[clean.charCodeAt(i)];
-    const b1 = lookup[clean.charCodeAt(i + 1)];
-    const b2 = i + 2 < clean.length ? lookup[clean.charCodeAt(i + 2)] : 0;
-    const b3 = i + 3 < clean.length ? lookup[clean.charCodeAt(i + 3)] : 0;
-    bytes[byteIndex++] = (b0 << 2) | (b1 >> 4);
-    if (i + 2 < clean.length) bytes[byteIndex++] = ((b1 & 15) << 4) | (b2 >> 2);
-    if (i + 3 < clean.length) bytes[byteIndex++] = ((b2 & 3) << 6) | b3;
-  }
-  return bytes.subarray(0, byteIndex);
-}
-
 /** Lee un archivo como Uint8Array compatible con web y nativo */
 async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
   if (Platform.OS === "web") {
@@ -51,14 +23,14 @@ async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
     const base64 = await LegacyFS.readAsStringAsync(uri, {
       encoding: "base64" as LegacyFS.EncodingType,
     });
-    return base64ToUint8Array(base64);
+    // Buffer.from decodifica base64 a bytes de forma confiable
+    return new Uint8Array(Buffer.from(base64, "base64"));
   }
 }
 
 /**
  * Parsea un archivo Excel con formato posicional:
  * Columna A = Código | B = Nombre | C = Stock Sistema | D = IMEI (opcional)
- * La primera fila puede ser encabezado o datos — se detecta automáticamente.
  */
 export async function parsearExcel(uri: string): Promise<{
   productos: ExcelProducto[];
@@ -191,8 +163,8 @@ export async function exportarExcel(
   const fileName = `auditoria_${nombreFiltro}_${fecha}.xlsx`;
 
   if (Platform.OS === "web") {
-    const wbout = write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
-    const blob = new Blob([wbout], {
+    const wbout = write(wb, { type: "array", bookType: "xlsx" });
+    const blob = new Blob([new Uint8Array(wbout as ArrayLike<number>)], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
     const url = URL.createObjectURL(blob);
@@ -204,14 +176,15 @@ export async function exportarExcel(
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } else {
-    // Generar bytes del Excel
-    const wbout = write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
+    // xlsx devuelve un Array o Uint8Array según el entorno
+    // Buffer.from() lo acepta en cualquier caso y produce base64 correcto
+    const wbout = write(wb, { type: "array", bookType: "xlsx" });
+    const base64 = Buffer.from(wbout as ArrayLike<number>).toString("base64");
 
-    // Escribir bytes directamente al disco usando la nueva API de expo-file-system
-    // Sin base64 — los bytes van directo al archivo, sin riesgo de corrupción
     const filePath = `${LegacyFS.cacheDirectory}${fileName}`;
-    const file = new FSFile(filePath);
-    file.write(wbout.buffer as ArrayBuffer);
+    await LegacyFS.writeAsStringAsync(filePath, base64, {
+      encoding: "base64" as LegacyFS.EncodingType,
+    });
 
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
