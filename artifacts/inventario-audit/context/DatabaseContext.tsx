@@ -107,7 +107,7 @@ interface DBContextValue {
     productos: Omit<ProductoInventario, "id" | "stock_fisico" | "auditoria_id" | "imeis_fisicos" | "inconsistencias">[],
     auditoriaId: number,
     omitirDuplicados?: boolean
-  ) => Promise<{ insertados: number; duplicados: number; errores: string[] }>;
+  ) => Promise<{ insertados: number; duplicados: number; errores: string[]; info: string }>;
   verificarCodigosExistentes: (codigos: string[], auditoriaId: number) => Promise<string[]>;
   actualizarConteo: (
     productoId: number,
@@ -309,6 +309,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       let insertados = 0;
       let duplicados = 0;
       const errores: string[] = [];
+      let info = "";
 
       if (dbRef.current) {
         // 1. Cargar todos los productos existentes en un Map (1 sola query)
@@ -317,31 +318,31 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           [auditoriaId]
         ) as { id: number; codigo: string }[];
         const existenteMap = new Map<string, number>(existentes.map((e) => [e.codigo, e.id]));
+        info = `SQLite | existentes: ${existentes.length}`;
 
         // 2. Todo dentro de una transacción para velocidad y atomicidad
         const db = dbRef.current;
-        await db.execAsync("BEGIN TRANSACTION");
         try {
-          for (const prod of productosNuevos) {
-            const existeId = existenteMap.get(prod.codigo);
-            if (existeId !== undefined) {
-              if (omitirDuplicados) { duplicados++; continue; }
-              await db.runAsync(
-                "UPDATE productos SET nombre = ?, stock_sistema = ?, imeis_sistema = ? WHERE id = ?",
-                [prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, existeId]
-              );
-            } else {
-              await db.runAsync(
-                "INSERT INTO productos (codigo, nombre, stock_sistema, imeis_sistema, auditoria_id) VALUES (?, ?, ?, ?, ?)",
-                [prod.codigo, prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, auditoriaId]
-              );
-              existenteMap.set(prod.codigo, -1);
+          await db.withTransactionAsync(async () => {
+            for (const prod of productosNuevos) {
+              const existeId = existenteMap.get(prod.codigo);
+              if (existeId !== undefined) {
+                if (omitirDuplicados) { duplicados++; continue; }
+                await db.runAsync(
+                  "UPDATE productos SET nombre = ?, stock_sistema = ?, imeis_sistema = ? WHERE id = ?",
+                  [prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, existeId]
+                );
+              } else {
+                await db.runAsync(
+                  "INSERT INTO productos (codigo, nombre, stock_sistema, imeis_sistema, auditoria_id) VALUES (?, ?, ?, ?, ?)",
+                  [prod.codigo, prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, auditoriaId]
+                );
+                existenteMap.set(prod.codigo, -1);
+              }
+              insertados++;
             }
-            insertados++;
-          }
-          await db.execAsync("COMMIT");
+          });
         } catch (e) {
-          await db.execAsync("ROLLBACK");
           errores.push(`Error en transacción: ${e}`);
         }
 
@@ -354,9 +355,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           [cntRow?.cnt ?? insertados, new Date().toISOString(), auditoriaId]
         );
       } else {
+        const imeiGlobal = new Map<string, string>();
         const existingCodes = new Set(
           storeRef.current.prods.filter((p) => p.auditoria_id === auditoriaId).map((p) => p.codigo)
         );
+        info = `Memoria | existentes: ${existingCodes.size}`;
         const newProds: ProductoInventario[] = [];
         for (const prod of productosNuevos) {
           if (existingCodes.has(prod.codigo)) {
@@ -410,7 +413,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         ]);
       }
 
-      return { insertados, duplicados, errores };
+      return { insertados, duplicados, errores, info };
     },
     []
   );
