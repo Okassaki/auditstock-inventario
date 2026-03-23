@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnóstico Excel</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+body{font-family:monospace;padding:20px;background:#111;color:#0f0;max-width:600px}
+h2{color:#fff}button{background:#2563eb;color:#fff;border:none;padding:12px 24px;font-size:16px;border-radius:8px;cursor:pointer;width:100%}
+#out{background:#000;padding:16px;border-radius:8px;margin-top:16px;white-space:pre-wrap;word-break:break-all;max-height:80vh;overflow:auto}
+</style>
+</head>
+<body>
+<h2>Diagnóstico Excel</h2>
+<p>Selecciona tu archivo Excel:</p>
+<button onclick="document.getElementById('fi').click()">📂 Seleccionar archivo</button>
+<input id="fi" type="file" accept=".xlsx,.xls" style="display:none">
+<div id="out">Esperando archivo...</div>
+<script>
+document.getElementById('fi').onchange = function() {
+  const file = this.files[0];
+  if (!file) return;
+  const out = document.getElementById('out');
+  out.textContent = 'Leyendo ' + file.name + ' (' + file.size + ' bytes)...';
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      let txt = '=== ARCHIVO: ' + file.name + ' ===\n';
+      txt += 'Tamaño: ' + file.size + ' bytes\n';
+      txt += 'Hojas: ' + wb.SheetNames.join(', ') + '\n\n';
+      wb.SheetNames.forEach(function(name) {
+        const ws = wb.Sheets[name];
+        const ref = ws['!ref'] || '(vacía)';
+        const range = XLSX.utils.decode_range(ref);
+        const nrows = range.e.r + 1;
+        const ncols = range.e.c + 1;
+        const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+        txt += '--- Hoja: ' + name + ' ---\n';
+        txt += 'Ref: ' + ref + '\n';
+        txt += 'Filas según ref: ' + nrows + '\n';
+        txt += 'Filas leídas: ' + rows.length + '\n';
+        txt += 'Columnas: ' + ncols + '\n\n';
+        txt += 'PRIMERA FILA (encabezado?):\n';
+        if (rows[0]) txt += JSON.stringify(rows[0]) + '\n\n';
+        txt += 'FILAS 2 a 6 (primeros datos):\n';
+        for (let i=1; i<=5 && i<rows.length; i++) txt += 'F'+i+': '+JSON.stringify(rows[i])+'\n';
+        txt += '\nFILAS ULTIMAS (últimos 3 datos):\n';
+        for (let i=Math.max(6,rows.length-3); i<rows.length; i++) txt += 'F'+i+': '+JSON.stringify(rows[i])+'\n';
+        let noVacias = 0;
+        for (let i=1; i<rows.length; i++) { if (String(rows[i][0]||'').trim()) noVacias++; }
+        txt += '\nFilas con código en col A: ' + noVacias + '\n';
+        txt += '================\n\n';
+      });
+      out.textContent = txt;
+    } catch(err) {
+      out.textContent = 'ERROR: ' + err;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
+</script>
+</body>
+</html>
