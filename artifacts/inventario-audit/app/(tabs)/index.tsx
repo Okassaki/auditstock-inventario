@@ -145,7 +145,11 @@ export default function InicioScreen() {
       }
 
       const parsedCount = productos.length;
-      setImportProgress(`Importando ${parsedCount} productos...`);
+      // Mostrar info del archivo antes de guardar (2 segundos visibles)
+      setImportProgress(
+        `Archivo: ${diagnostico ?? "?"}\n\nProductos leídos: ${parsedCount}\nGuardando...`
+      );
+      await new Promise((r) => setTimeout(r, 3000));
 
       const { insertados, duplicados, errores: errImp, info: infoImp } = await importarProductos(
         productos.map((p) => ({
