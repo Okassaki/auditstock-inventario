@@ -309,49 +309,47 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       let insertados = 0;
       let duplicados = 0;
       const errores: string[] = [];
-      const imeiGlobal = new Map<string, string>();
 
       if (dbRef.current) {
-        for (const prod of productosNuevos) {
-          try {
-            const existe = await dbRef.current.getFirstAsync(
-              "SELECT id FROM productos WHERE codigo = ? AND auditoria_id = ?",
-              [prod.codigo, auditoriaId]
-            ) as { id: number } | null;
+        // 1. Cargar todos los productos existentes en un Map (1 sola query)
+        const existentes = await dbRef.current.getAllAsync(
+          "SELECT id, codigo FROM productos WHERE auditoria_id = ?",
+          [auditoriaId]
+        ) as { id: number; codigo: string }[];
+        const existenteMap = new Map<string, number>(existentes.map((e) => [e.codigo, e.id]));
 
-            if (existe) {
+        // 2. Todo dentro de una transacción para velocidad y atomicidad
+        const db = dbRef.current;
+        await db.execAsync("BEGIN TRANSACTION");
+        try {
+          for (const prod of productosNuevos) {
+            const existeId = existenteMap.get(prod.codigo);
+            if (existeId !== undefined) {
               if (omitirDuplicados) { duplicados++; continue; }
-              await dbRef.current.runAsync(
+              await db.runAsync(
                 "UPDATE productos SET nombre = ?, stock_sistema = ?, imeis_sistema = ? WHERE id = ?",
-                [prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, existe.id]
+                [prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, existeId]
               );
-              insertados++;
-              continue;
+            } else {
+              await db.runAsync(
+                "INSERT INTO productos (codigo, nombre, stock_sistema, imeis_sistema, auditoria_id) VALUES (?, ?, ?, ?, ?)",
+                [prod.codigo, prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, auditoriaId]
+              );
+              existenteMap.set(prod.codigo, -1);
             }
-
-            if (prod.imeis_sistema) {
-              const imeis = prod.imeis_sistema.split(",").map((i: string) => i.trim()).filter(Boolean);
-              for (const imei of imeis) {
-                if (imeiGlobal.has(imei)) {
-                  errores.push(`IMEI duplicado: ${imei} en ${prod.codigo} y ${imeiGlobal.get(imei)}`);
-                } else { imeiGlobal.set(imei, prod.codigo); }
-              }
-            }
-
-            await dbRef.current.runAsync(
-              "INSERT INTO productos (codigo, nombre, stock_sistema, imeis_sistema, auditoria_id) VALUES (?, ?, ?, ?, ?)",
-              [prod.codigo, prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, auditoriaId]
-            );
             insertados++;
-          } catch (e) {
-            errores.push(`Error en ${prod.codigo}: ${e}`);
           }
+          await db.execAsync("COMMIT");
+        } catch (e) {
+          await db.execAsync("ROLLBACK");
+          errores.push(`Error en transacción: ${e}`);
         }
-        const cntRow = await dbRef.current.getFirstAsync(
+
+        const cntRow = await db.getFirstAsync(
           "SELECT COUNT(*) as cnt FROM productos WHERE auditoria_id = ?",
           [auditoriaId]
         ) as { cnt: number } | null;
-        await dbRef.current.runAsync(
+        await db.runAsync(
           "UPDATE auditorias SET total_productos = ?, fecha_modificacion = ? WHERE id = ?",
           [cntRow?.cnt ?? insertados, new Date().toISOString(), auditoriaId]
         );

@@ -29,10 +29,10 @@ async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
 }
 
 /**
- * Parsea un archivo Excel con formato posicional.
- * - Lee TODAS las hojas del libro.
- * - Detecta automáticamente múltiples productos por fila usando las dimensiones reales del sheet.
- * - Stride (columnas por grupo): 3 sin IMEI, 4 con IMEI.
+ * Parsea un archivo Excel.
+ * Lee TODAS las hojas, TODAS las filas y TODAS las columnas.
+ * Para cada fila escanea columnas en grupos de 3 (código, nombre, stock)
+ * empezando en el offset 0, luego 3, 6, etc. — soporta cualquier layout.
  */
 export async function parsearExcel(uri: string): Promise<{
   productos: ExcelProducto[];
@@ -47,8 +47,6 @@ export async function parsearExcel(uri: string): Promise<{
     const uint8Array = await leerArchivoComoArray(uri);
     const workbook = read(uint8Array, { type: "array" });
 
-    diagLines.push(`Hojas: ${workbook.SheetNames.join(", ")}`);
-
     if (workbook.SheetNames.length === 0) {
       errores.push("El archivo no contiene hojas.");
       return { productos, errores };
@@ -59,98 +57,57 @@ export async function parsearExcel(uri: string): Promise<{
       const sheetRef = sheet["!ref"];
       if (!sheetRef) continue;
 
-      // Dimensiones reales de la hoja
       const sheetRange = utils.decode_range(sheetRef);
-      const ncols = sheetRange.e.c + 1; // cantidad de columnas reales
-      const nrows = sheetRange.e.r + 1; // cantidad de filas reales
+      const ncols = sheetRange.e.c + 1;
+      const nrows = sheetRange.e.r + 1;
+      diagLines.push(`Hoja "${sheetName}": ${nrows} filas x ${ncols} cols`);
 
+      // Lee TODAS las filas como arrays, celdas vacías = ""
       const rows = utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
       if (rows.length === 0) continue;
 
-      diagLines.push(`Hoja "${sheetName}": ${nrows} filas, ${ncols} columnas`);
+      // Detectar si la primera fila es encabezado (texto en col 0 o col 2)
+      const fila0 = rows[0] as unknown[];
+      const col0 = String(fila0[0] ?? "").trim();
+      const col2 = String(fila0[2] ?? "").trim();
+      const esEncabezado = isNaN(Number(col0)) || isNaN(Number(col2));
+      const inicio = esEncabezado ? 1 : 0;
 
-      // Detectar encabezado en columna C (índice 2)
-      const primeraFila = rows[0] as unknown[];
-      const primeraColC = String(primeraFila[2] ?? "").trim().toLowerCase();
-      const tieneEncabezado =
-        isNaN(Number(primeraColC)) ||
-        primeraColC === "" ||
-        primeraColC.includes("stock") ||
-        primeraColC.includes("sistema") ||
-        primeraColC.includes("cantidad");
+      // Calcular cuántos grupos de 3 columnas caben
+      const numGrupos = Math.max(1, Math.floor(ncols / 3));
 
-      const filaInicio = tieneEncabezado ? 1 : 0;
-
-      // ── Detectar stride ─────────────────────────────────────────────────────
-      // Usamos ncols (de !ref) como señal primaria, y validamos contra los datos.
-      // stride 0 = un producto por fila; stride 3 o 4 = varios por fila.
-      let stride = 0;
-
-      if (ncols >= 5) {
-        // Candidatos: 3 (sin IMEI) y 4 (con IMEI)
-        const candidatos = [3, 4];
-        for (const s of candidatos) {
-          let hits = 0;
-          const limit = Math.min(filaInicio + 20, rows.length);
-          for (let r = filaInicio; r < limit; r++) {
-            const row = rows[r] as unknown[];
-            // Accedemos por índice numérico, independiente de row.length
-            const potCode  = String(row[s]     ?? "").trim();
-            const potStock = String(row[s + 2] ?? "").trim();
-            if (potCode && potStock) {
-              const n = Number(potStock.replace(/[^0-9.-]/g, ""));
-              if (!isNaN(n)) hits++;
-            }
-          }
-          // Si más de la mitad de las filas revisadas tienen producto en este offset → es el stride
-          if (hits > 0 && hits >= Math.ceil((limit - filaInicio) / 2)) {
-            stride = s;
-            break;
-          }
-        }
-      }
-      diagLines.push(`Stride detectado: ${stride === 0 ? "ninguno (1 producto/fila)" : `${stride} columnas/producto`}`);
-      // ────────────────────────────────────────────────────────────────────────
-
-      for (let i = filaInicio; i < rows.length; i++) {
+      for (let i = inicio; i < rows.length; i++) {
         const row = rows[i] as unknown[];
         const rowNum = i + 1;
 
-        // Construir offsets usando ncols (más confiable que row.length)
-        const colMax = Math.max(ncols, row.length);
-        const offsets: number[] = [0];
-        if (stride > 0) {
-          for (let off = stride; off < colMax; off += stride) {
-            offsets.push(off);
-          }
-        }
+        for (let g = 0; g < numGrupos; g++) {
+          const offset = g * 3;
+          const codigoRaw = row[offset];
+          const nombreRaw = row[offset + 1];
+          const stockRaw  = row[offset + 2];
 
-        for (const offset of offsets) {
-          const codigo   = String(row[offset]     ?? "").trim();
-          const nombre   = String(row[offset + 1] ?? "").trim();
-          const stockRaw = row[offset + 2];
+          const codigo = String(codigoRaw ?? "").trim();
+          const nombre = String(nombreRaw ?? "").trim();
 
-          // IMEI: presente en la 4.ª columna del grupo (solo si stride >= 4),
-          // o en columna D cuando es producto único (stride 0).
-          const imei =
-            stride >= 4
-              ? String(row[offset + 3] ?? "").trim()
-              : stride === 0
-              ? String(row[3] ?? "").trim()
-              : "";
+          // Fila completamente vacía en este grupo → saltar
+          if (!codigo && !nombre && (stockRaw === "" || stockRaw === undefined)) continue;
 
-          if (!codigo && !nombre && !stockRaw) continue;
-
+          // Sin código → omitir
           if (!codigo) {
-            errores.push(`Hoja "${sheetName}" fila ${rowNum}: Código vacío (omitida)`);
+            errores.push(`Hoja "${sheetName}" fila ${rowNum}: código vacío (omitida)`);
             continue;
           }
 
-          const stock = Number(String(stockRaw ?? "").replace(/[^0-9.-]/g, ""));
-          if (stockRaw !== "" && stockRaw !== undefined && isNaN(stock)) {
-            errores.push(`Hoja "${sheetName}" fila ${rowNum}: Stock inválido "${stockRaw}" para ${codigo}`);
+          // Parsear stock
+          const stockStr = String(stockRaw ?? "").trim();
+          const stock = stockStr === "" ? 0 : Number(stockStr.replace(/[^0-9.-]/g, ""));
+          if (stockStr !== "" && isNaN(stock)) {
+            errores.push(`Hoja "${sheetName}" fila ${rowNum}: stock inválido "${stockRaw}" para ${codigo}`);
             continue;
           }
+
+          // IMEI opcional: columna 4 del grupo (índice offset+3)
+          const imei = String(row[offset + 3] ?? "").trim();
 
           productos.push({
             codigo,
