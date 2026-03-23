@@ -110,6 +110,16 @@ export default function InicioScreen() {
       }
 
       const parsedCount = productos.length;
+
+      // Alerta diagnóstica ANTES de guardar
+      await new Promise<void>((resolve) => {
+        Alert.alert(
+          "📊 Datos leídos del archivo",
+          `${diagnostico ?? "Sin info de hoja"}\n\nProductos encontrados: ${parsedCount}\n\n¿Guardar en la base de datos?`,
+          [{ text: "Guardar", onPress: () => resolve() }]
+        );
+      });
+
       setImportProgress(`Importando ${parsedCount} productos...`);
 
       const { insertados, duplicados, errores: errImp, info: infoImp } = await importarProductos(
