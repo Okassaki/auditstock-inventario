@@ -188,14 +188,16 @@ export default function InicioScreen() {
   const ejecutarImport = async (
     productosAImportar: { codigo: string; nombre: string; stock_sistema: number; imeis_sistema: string | null }[],
     audId: number,
-    erroresArchivo: string[] = []
+    erroresArchivo: string[] = [],
+    omitirDuplicados: boolean = true
   ) => {
     setIsImporting(true);
     setImportProgress(`Importando ${productosAImportar.length} productos...`);
     try {
       const { insertados, duplicados, errores: errImp } = await importarProductos(
         productosAImportar,
-        audId
+        audId,
+        omitirDuplicados
       );
 
       setIsImporting(false);
@@ -657,7 +659,7 @@ export default function InicioScreen() {
                   if (!duplicadosInfo) return;
                   const info = duplicadosInfo;
                   setDuplicadosInfo(null);
-                  await ejecutarImport(info.productosOriginales, info.auditoriaId, info.erroresArchivo);
+                  await ejecutarImport(info.productosOriginales, info.auditoriaId, info.erroresArchivo, false);
                 }}
               >
                 <Text style={[styles.dupBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
@@ -672,7 +674,7 @@ export default function InicioScreen() {
                   setDuplicadosInfo(null);
                   const codigosEnBD = new Set(info.yaEnBD.map((d) => d.codigo));
                   const soloUnicos = info.productosUnicos.filter((p) => !codigosEnBD.has(p.codigo));
-                  await ejecutarImport(soloUnicos, info.auditoriaId, info.erroresArchivo);
+                  await ejecutarImport(soloUnicos, info.auditoriaId, info.erroresArchivo, true);
                 }}
               >
                 <Text style={[styles.dupBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>

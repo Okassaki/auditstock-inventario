@@ -105,7 +105,8 @@ interface DBContextValue {
   cargarAuditoria: (id: number) => Promise<void>;
   importarProductos: (
     productos: Omit<ProductoInventario, "id" | "stock_fisico" | "auditoria_id" | "imeis_fisicos" | "inconsistencias">[],
-    auditoriaId: number
+    auditoriaId: number,
+    omitirDuplicados?: boolean
   ) => Promise<{ insertados: number; duplicados: number; errores: string[] }>;
   verificarCodigosExistentes: (codigos: string[], auditoriaId: number) => Promise<string[]>;
   actualizarConteo: (
@@ -302,7 +303,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const importarProductos = useCallback(
     async (
       productosNuevos: Omit<ProductoInventario, "id" | "stock_fisico" | "auditoria_id" | "imeis_fisicos" | "inconsistencias">[],
-      auditoriaId: number
+      auditoriaId: number,
+      omitirDuplicados: boolean = true
     ) => {
       let insertados = 0;
       let duplicados = 0;
@@ -315,8 +317,17 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             const existe = await dbRef.current.getFirstAsync(
               "SELECT id FROM productos WHERE codigo = ? AND auditoria_id = ?",
               [prod.codigo, auditoriaId]
-            );
-            if (existe) { duplicados++; continue; }
+            ) as { id: number } | null;
+
+            if (existe) {
+              if (omitirDuplicados) { duplicados++; continue; }
+              await dbRef.current.runAsync(
+                "UPDATE productos SET nombre = ?, stock_sistema = ?, imeis_sistema = ? WHERE id = ?",
+                [prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, existe.id]
+              );
+              insertados++;
+              continue;
+            }
 
             if (prod.imeis_sistema) {
               const imeis = prod.imeis_sistema.split(",").map((i: string) => i.trim()).filter(Boolean);
@@ -346,7 +357,22 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         );
         const newProds: ProductoInventario[] = [];
         for (const prod of productosNuevos) {
-          if (existingCodes.has(prod.codigo)) { duplicados++; continue; }
+          if (existingCodes.has(prod.codigo)) {
+            if (omitirDuplicados) { duplicados++; continue; }
+            const idx = storeRef.current.prods.findIndex(
+              (p) => p.codigo === prod.codigo && p.auditoria_id === auditoriaId
+            );
+            if (idx !== -1) {
+              storeRef.current.prods[idx] = {
+                ...storeRef.current.prods[idx],
+                nombre: prod.nombre,
+                stock_sistema: prod.stock_sistema,
+                imeis_sistema: prod.imeis_sistema ?? null,
+              };
+            }
+            insertados++;
+            continue;
+          }
           if (prod.imeis_sistema) {
             const imeis = prod.imeis_sistema.split(",").map((i) => i.trim()).filter(Boolean);
             for (const imei of imeis) {
