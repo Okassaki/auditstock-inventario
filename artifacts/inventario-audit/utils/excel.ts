@@ -13,23 +13,34 @@ export interface ExcelProducto {
   imeis_sistema?: string;
 }
 
+/** Lee un Blob/File con FileReader (callbacks, sin Promises internas — máxima compatibilidad móvil) */
+function leerBlobConFileReader(blob: Blob): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ab = reader.result as ArrayBuffer;
+      resolve(new Uint8Array(ab));
+    };
+    reader.onerror = () => reject(new Error("FileReader: " + reader.error?.message));
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 /** Lee un archivo como Uint8Array compatible con web y nativo */
 async function leerArchivoComoArray(uri: string, file?: File): Promise<Uint8Array> {
   if (Platform.OS === "web") {
-    // Usar File.arrayBuffer() directamente si está disponible — es más confiable que fetch(blob:url) en móvil
-    if (file && typeof file.arrayBuffer === "function") {
-      const arrayBuffer = await file.arrayBuffer();
-      return new Uint8Array(arrayBuffer);
+    // 1er intento: usar el File nativo con FileReader (más compatible que .arrayBuffer() en móvil)
+    if (file instanceof Blob) {
+      return leerBlobConFileReader(file);
     }
-    // Fallback: leer el blob URL con fetch
+    // 2do intento: obtener blob del URI y leer con FileReader
     const response = await fetch(uri);
-    const arrayBuffer = await response.arrayBuffer();
-    return new Uint8Array(arrayBuffer);
+    const blob = await response.blob();
+    return leerBlobConFileReader(blob);
   } else {
     const base64 = await LegacyFS.readAsStringAsync(uri, {
       encoding: "base64" as LegacyFS.EncodingType,
     });
-    // Buffer.from decodifica base64 a bytes de forma confiable
     return new Uint8Array(Buffer.from(base64, "base64"));
   }
 }

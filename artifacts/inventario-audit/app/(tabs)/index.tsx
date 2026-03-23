@@ -80,26 +80,58 @@ export default function InicioScreen() {
     }
   };
 
+  /** En web: abre un <input type=file> nativo y devuelve el File seleccionado */
+  const pickFileWeb = (): Promise<File | null> =>
+    new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
+      // Dar tiempo para que el diálogo se abra antes de escuchar cambios
+      let settled = false;
+      const settle = (val: File | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(val);
+      };
+      input.onchange = () => settle(input.files?.[0] ?? null);
+      // Si el usuario cierra sin elegir, el foco vuelve a la ventana
+      window.addEventListener("focus", function onFocus() {
+        window.removeEventListener("focus", onFocus);
+        setTimeout(() => settle(null), 500);
+      }, { once: true });
+      input.click();
+    });
+
   const handleImportar = async (audId: number) => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "application/vnd.ms-excel",
-          "*/*",
-        ],
-        copyToCacheDirectory: true,
-      });
+      let nativeFile: File | undefined;
+      let fileUri = "";
 
-      if (result.canceled || !result.assets?.[0]) return;
+      if (Platform.OS === "web") {
+        // Usar input nativo en lugar de expo-document-picker (más confiable en móvil)
+        const picked = await pickFileWeb();
+        if (!picked) return;
+        nativeFile = picked;
+        fileUri = "";
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: [
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "*/*",
+          ],
+          copyToCacheDirectory: true,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        const asset = result.assets[0];
+        fileUri = asset.uri;
+        nativeFile = (asset as any).file ?? undefined;
+      }
 
       setIsImporting(true);
       setImportProgress("Leyendo archivo Excel...");
 
-      const asset = result.assets[0];
-      // En web, expo-document-picker expone el File nativo — usarlo evita que fetch(blob:url) se cuelgue
-      const nativeFile: File | undefined = (asset as any).file ?? undefined;
-      const { productos, errores, diagnostico } = await parsearExcel(asset.uri, nativeFile);
+      const { productos, errores, diagnostico } = await parsearExcel(fileUri, nativeFile);
 
       if (productos.length === 0) {
         Alert.alert(
