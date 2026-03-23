@@ -12,10 +12,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 interface BarcodeScannerModalProps {
   visible: boolean;

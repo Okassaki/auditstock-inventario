@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
-  useColorScheme,
 } from "react-native";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
@@ -28,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { exportarExcel } from "@/utils/excel";
 import { exportarPDF, getProductosFiltrados } from "@/utils/exportReport";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 type Tab = "faltantes" | "sobrantes" | "correctos" | "sin_contar";
 type Filtro = "todos" | "faltantes" | "sobrantes";

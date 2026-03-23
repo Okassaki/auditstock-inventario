@@ -9,8 +9,9 @@ import {
 import { SymbolView } from "expo-symbols";
 import { MaterialCommunityIcons, Feather, Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { Colors } from "@/constants/colors";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 function NativeTabLayout() {
   return (

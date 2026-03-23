@@ -9,9 +9,9 @@ import {
   StyleSheet,
   Text,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 export type ErrorFallbackProps = {
   error: Error;

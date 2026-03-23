@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View, useColorScheme } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Colors } from "@/constants/colors";
 import {
   type ProductoInventario,
@@ -8,6 +8,7 @@ import {
   getDiferencia,
 } from "@/context/DatabaseContext";
 import { Badge } from "./Badge";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 interface ProductoCardProps {
   producto: ProductoInventario;

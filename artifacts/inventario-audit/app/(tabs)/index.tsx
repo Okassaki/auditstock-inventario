@@ -16,12 +16,12 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useDatabase, type Auditoria } from "@/context/DatabaseContext";
 import { parsearExcel } from "@/utils/excel";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 export default function InicioScreen() {
   const colorScheme = useColorScheme();

@@ -11,7 +11,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
@@ -23,6 +22,7 @@ import {
 import { SearchBar } from "@/components/ui/SearchBar";
 import { ProductoCard } from "@/components/ui/ProductoCard";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 export default function ConteoScreen() {
   const colorScheme = useColorScheme();

@@ -6,11 +6,11 @@ import {
   StyleSheet,
   Text,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useDatabase, type Inconsistencia } from "@/context/DatabaseContext";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 const TIPO_CONFIG: Record<
   string,
