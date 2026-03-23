@@ -131,7 +131,7 @@ export async function parsearExcel(uri: string, file?: File): Promise<{
           }
 
           // IMEI opcional: columna 4 del grupo (índice offset+3)
-          const imei = String(row[offset + 3] ?? "").trim();
+          const imei = String(getCell(i, offset + 3) ?? "").trim();
 
           productos.push({
             codigo,
