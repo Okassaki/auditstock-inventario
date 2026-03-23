@@ -356,14 +356,24 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         );
       } else {
         const imeiGlobal = new Map<string, string>();
-        const existingCodes = new Set(
+        const preExistingCodes = new Set(
           storeRef.current.prods.filter((p) => p.auditoria_id === auditoriaId).map((p) => p.codigo)
         );
-        info = `Memoria | existentes: ${existingCodes.size}`;
+        // Separamos los códigos ya guardados de los nuevos que se van insertando en este lote
+        const existingCodes = new Set(preExistingCodes);
+        const codigosDuplicadosEnExcel: string[] = [];
+        info = `Memoria | existentes: ${preExistingCodes.size}`;
         const newProds: ProductoInventario[] = [];
         for (const prod of productosNuevos) {
           if (existingCodes.has(prod.codigo)) {
             if (omitirDuplicados) { duplicados++; continue; }
+            // Duplicado dentro del mismo lote Excel
+            if (!preExistingCodes.has(prod.codigo)) {
+              codigosDuplicadosEnExcel.push(prod.codigo);
+              duplicados++;
+              continue; // ignorar la segunda ocurrencia
+            }
+            // Ya existía en BD → actualizar
             const idx = storeRef.current.prods.findIndex(
               (p) => p.codigo === prod.codigo && p.auditoria_id === auditoriaId
             );
@@ -411,6 +421,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           saveProductos(storeRef.current.prods),
           saveAuditorias(storeRef.current.auds),
         ]);
+        if (codigosDuplicadosEnExcel.length > 0) {
+          const ejemplos = codigosDuplicadosEnExcel.slice(0, 5).join(", ");
+          const mas = codigosDuplicadosEnExcel.length > 5 ? ` y ${codigosDuplicadosEnExcel.length - 5} más` : "";
+          errores.push(
+            `⚠️ ${codigosDuplicadosEnExcel.length} código(s) duplicado(s) en el Excel (se guardó solo la primera aparición): ${ejemplos}${mas}`
+          );
+        }
       }
 
       return { insertados, duplicados, errores, info };

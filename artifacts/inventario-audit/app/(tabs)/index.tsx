@@ -161,10 +161,10 @@ export default function InicioScreen() {
 
       let mensaje = "";
       if (diagnostico) mensaje += `📄 ${diagnostico}\n\n`;
-      mensaje += `Leídos del Excel: ${parsedCount}\nGuardados en BD: ${insertados}`;
-      if (duplicados > 0) mensaje += `\n(${duplicados} actualizados)`;
+      mensaje += `Leídos del Excel: ${parsedCount}\nProductos únicos guardados: ${insertados}`;
+      if (duplicados > 0) mensaje += `\nDuplicados en Excel ignorados: ${duplicados}`;
       if (infoImp) mensaje += `\n[${infoImp}]`;
-      if (errImp.length > 0) mensaje += `\n\nAdvertencias:\n${errImp.slice(0, 5).join("\n")}`;
+      if (errImp.length > 0) mensaje += `\n\n${errImp.join("\n")}`;
       if (errores.length > 0) mensaje += `\n\nAvisos del archivo:\n${errores.slice(0, 3).join("\n")}`;
 
       setResultModal({ titulo: "Importación completada ✓", mensaje, audId });
