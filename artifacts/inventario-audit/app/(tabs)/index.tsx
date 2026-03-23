@@ -125,12 +125,13 @@ export default function InicioScreen() {
 
       setIsImporting(false);
 
-      let mensaje = `Leídos del Excel: ${parsedCount}\nGuardados en BD: ${insertados}`;
+      let mensaje = "";
+      if (diagnostico) mensaje += `📄 ${diagnostico}\n\n`;
+      mensaje += `Leídos del Excel: ${parsedCount}\nGuardados en BD: ${insertados}`;
       if (duplicados > 0) mensaje += ` (${duplicados} actualizados)`;
       if (infoImp) mensaje += `\n[${infoImp}]`;
       if (errImp.length > 0) mensaje += `\n\nAdvertencias:\n${errImp.slice(0, 5).join("\n")}`;
       if (errores.length > 0) mensaje += `\n\nAvisos del archivo:\n${errores.slice(0, 3).join("\n")}`;
-      if (diagnostico) mensaje += `\n\n[Info] ${diagnostico}`;
 
       Alert.alert("Importación completada", mensaje, [
         {

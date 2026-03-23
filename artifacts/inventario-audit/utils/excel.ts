@@ -60,10 +60,14 @@ export async function parsearExcel(uri: string): Promise<{
       const sheetRange = utils.decode_range(sheetRef);
       const ncols = sheetRange.e.c + 1;
       const nrows = sheetRange.e.r + 1;
-      diagLines.push(`Hoja "${sheetName}": ${nrows} filas x ${ncols} cols`);
 
       // Lee TODAS las filas como arrays, celdas vacías = ""
       const rows = utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+
+      console.log(`[parsearExcel] Hoja "${sheetName}": ref=${sheetRef} nrows=${nrows} ncols=${ncols} rows.length=${rows.length} bytes=${uint8Array.length}`);
+
+      diagLines.push(`Hoja "${sheetName}": ref ${sheetRef} | ${nrows} filas (ref) | ${rows.length} filas leídas | ${ncols} cols | archivo ${uint8Array.length} bytes`);
+
       if (rows.length === 0) continue;
 
       // Detectar si la primera fila es encabezado (texto en col 0 o col 2)
@@ -72,6 +76,8 @@ export async function parsearExcel(uri: string): Promise<{
       const col2 = String(fila0[2] ?? "").trim();
       const esEncabezado = isNaN(Number(col0)) || isNaN(Number(col2));
       const inicio = esEncabezado ? 1 : 0;
+
+      console.log(`[parsearExcel] col0="${col0}" col2="${col2}" esEncabezado=${esEncabezado} inicio=${inicio}`);
 
       // Calcular cuántos grupos de 3 columnas caben
       const numGrupos = Math.max(1, Math.floor(ncols / 3));
