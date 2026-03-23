@@ -14,8 +14,14 @@ export interface ExcelProducto {
 }
 
 /** Lee un archivo como Uint8Array compatible con web y nativo */
-async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
+async function leerArchivoComoArray(uri: string, file?: File): Promise<Uint8Array> {
   if (Platform.OS === "web") {
+    // Usar File.arrayBuffer() directamente si está disponible — es más confiable que fetch(blob:url) en móvil
+    if (file && typeof file.arrayBuffer === "function") {
+      const arrayBuffer = await file.arrayBuffer();
+      return new Uint8Array(arrayBuffer);
+    }
+    // Fallback: leer el blob URL con fetch
     const response = await fetch(uri);
     const arrayBuffer = await response.arrayBuffer();
     return new Uint8Array(arrayBuffer);
@@ -34,7 +40,7 @@ async function leerArchivoComoArray(uri: string): Promise<Uint8Array> {
  * Para cada fila escanea columnas en grupos de 3 (código, nombre, stock)
  * empezando en el offset 0, luego 3, 6, etc. — soporta cualquier layout.
  */
-export async function parsearExcel(uri: string): Promise<{
+export async function parsearExcel(uri: string, file?: File): Promise<{
   productos: ExcelProducto[];
   errores: string[];
   diagnostico?: string;
@@ -44,7 +50,7 @@ export async function parsearExcel(uri: string): Promise<{
   const diagLines: string[] = [];
 
   try {
-    const uint8Array = await leerArchivoComoArray(uri);
+    const uint8Array = await leerArchivoComoArray(uri, file);
     const workbook = read(uint8Array, { type: "array" });
 
     if (workbook.SheetNames.length === 0) {

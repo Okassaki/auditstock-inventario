@@ -96,7 +96,10 @@ export default function InicioScreen() {
       setIsImporting(true);
       setImportProgress("Leyendo archivo Excel...");
 
-      const { productos, errores, diagnostico } = await parsearExcel(result.assets[0].uri);
+      const asset = result.assets[0];
+      // En web, expo-document-picker expone el File nativo — usarlo evita que fetch(blob:url) se cuelgue
+      const nativeFile: File | undefined = (asset as any).file ?? undefined;
+      const { productos, errores, diagnostico } = await parsearExcel(asset.uri, nativeFile);
 
       if (productos.length === 0) {
         Alert.alert(
