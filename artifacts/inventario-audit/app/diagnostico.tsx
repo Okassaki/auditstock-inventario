@@ -21,48 +21,53 @@ export default function DiagnosticoScreen() {
       setResultado("Leyendo " + file.name + "...");
       const reader = new FileReader();
       reader.onload = (e) => {
-        try {
-          const bytes = new Uint8Array(e.target?.result as ArrayBuffer);
-          const wb = read(bytes, { type: "array" });
-          let txt = "=== ARCHIVO ===\n";
-          txt += "Nombre: " + file.name + "\n";
-          txt += "Tamaño: " + file.size + " bytes\n";
-          txt += "Hojas: " + wb.SheetNames.join(", ") + "\n\n";
-          wb.SheetNames.forEach((name) => {
-            const ws = wb.Sheets[name];
-            const ref = ws["!ref"] ?? "(vacía)";
-            const range = utils.decode_range(ref);
-            const nrows = range.e.r + 1;
-            const ncols = range.e.c + 1;
-            const rows = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
-            let conCodigo = 0;
-            for (let i = 1; i < rows.length; i++) {
-              const r = rows[i] as unknown[];
-              if (String(r[0] ?? "").trim()) conCodigo++;
-            }
-            txt += "--- Hoja: " + name + " ---\n";
-            txt += "Ref: " + ref + "\n";
-            txt += "Filas según ref: " + nrows + "\n";
-            txt += "Filas leídas: " + rows.length + "\n";
-            txt += "Columnas: " + ncols + "\n";
-            txt += "Filas con código (col A): " + conCodigo + "\n\n";
-            txt += "ENCABEZADO:\n" + JSON.stringify(rows[0]) + "\n\n";
-            txt += "PRIMERAS 5 FILAS DE DATOS:\n";
-            for (let i = 1; i <= 5 && i < rows.length; i++) {
-              txt += "F" + i + ": " + JSON.stringify(rows[i]) + "\n";
-            }
-            txt += "\nÚLTIMAS 3 FILAS:\n";
-            for (let i = Math.max(6, rows.length - 3); i < rows.length; i++) {
-              txt += "F" + i + ": " + JSON.stringify(rows[i]) + "\n";
-            }
-            txt += "================\n\n";
-          });
-          setResultado(txt);
-        } catch (err) {
-          setResultado("ERROR: " + String(err));
-        } finally {
-          setCargando(false);
-        }
+        const bytes = new Uint8Array(e.target?.result as ArrayBuffer);
+        // Mostrar tamaño inmediatamente
+        setResultado("Archivo leído: " + bytes.length + " bytes\nParsing Excel (puede tardar unos segundos)...");
+        // Dar tiempo al UI para renderizar antes del parsing CPU-intensivo
+        setTimeout(() => {
+          try {
+            const wb = read(bytes, { type: "array" });
+            let txt = "=== ARCHIVO ===\n";
+            txt += "Nombre: " + file.name + "\n";
+            txt += "Tamaño: " + file.size + " bytes\n";
+            txt += "Hojas: " + wb.SheetNames.join(", ") + "\n\n";
+            wb.SheetNames.forEach((name) => {
+              const ws = wb.Sheets[name];
+              const ref = ws["!ref"] ?? "(vacía)";
+              const range = utils.decode_range(ref);
+              const nrows = range.e.r + 1;
+              const ncols = range.e.c + 1;
+              const rows = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
+              let conCodigo = 0;
+              for (let i = 1; i < rows.length; i++) {
+                const r = rows[i] as unknown[];
+                if (String(r[0] ?? "").trim()) conCodigo++;
+              }
+              txt += "--- Hoja: " + name + " ---\n";
+              txt += "Ref: " + ref + "\n";
+              txt += "Filas según ref: " + nrows + "\n";
+              txt += "Filas leídas: " + rows.length + "\n";
+              txt += "Columnas: " + ncols + "\n";
+              txt += "Filas con código (col A): " + conCodigo + "\n\n";
+              txt += "ENCABEZADO:\n" + JSON.stringify(rows[0]) + "\n\n";
+              txt += "PRIMERAS 5 FILAS DE DATOS:\n";
+              for (let i = 1; i <= 5 && i < rows.length; i++) {
+                txt += "F" + i + ": " + JSON.stringify(rows[i]) + "\n";
+              }
+              txt += "\nÚLTIMAS 3 FILAS:\n";
+              for (let i = Math.max(6, rows.length - 3); i < rows.length; i++) {
+                txt += "F" + i + ": " + JSON.stringify(rows[i]) + "\n";
+              }
+              txt += "================\n\n";
+            });
+            setResultado(txt);
+          } catch (err) {
+            setResultado("ERROR: " + String(err));
+          } finally {
+            setCargando(false);
+          }
+        }, 100);
       };
       reader.onerror = () => {
         setResultado("Error leyendo el archivo: " + reader.error?.message);
