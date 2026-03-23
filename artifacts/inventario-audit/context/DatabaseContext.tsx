@@ -347,9 +347,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             errores.push(`Error en ${prod.codigo}: ${e}`);
           }
         }
+        const cntRow = await dbRef.current.getFirstAsync(
+          "SELECT COUNT(*) as cnt FROM productos WHERE auditoria_id = ?",
+          [auditoriaId]
+        ) as { cnt: number } | null;
         await dbRef.current.runAsync(
           "UPDATE auditorias SET total_productos = ?, fecha_modificacion = ? WHERE id = ?",
-          [insertados, new Date().toISOString(), auditoriaId]
+          [cntRow?.cnt ?? insertados, new Date().toISOString(), auditoriaId]
         );
       } else {
         const existingCodes = new Set(
@@ -396,9 +400,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           insertados++;
         }
         storeRef.current.prods.push(...newProds);
+        const totalReal = storeRef.current.prods.filter((p) => p.auditoria_id === auditoriaId).length;
         storeRef.current.auds = storeRef.current.auds.map((a) =>
           a.id === auditoriaId
-            ? { ...a, total_productos: a.total_productos + insertados, fecha_modificacion: new Date().toISOString() }
+            ? { ...a, total_productos: totalReal, fecha_modificacion: new Date().toISOString() }
             : a
         );
         await Promise.all([
