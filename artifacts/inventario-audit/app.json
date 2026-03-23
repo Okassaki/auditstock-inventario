@@ -47,6 +47,7 @@
       "expo-font",
       "expo-web-browser",
       "expo-sqlite",
+      "expo-updates",
       [
         "expo-camera",
         {
@@ -60,6 +61,15 @@
         }
       ]
     ],
+    "updates": {
+      "url": "https://u.expo.dev/82653458-4336-45d4-9b1d-a3c6410411ca",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "experiments": {
       "typedRoutes": true
     },

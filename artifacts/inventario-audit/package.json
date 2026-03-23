@@ -61,6 +61,7 @@
     "expo-print": "^15.0.8",
     "expo-sharing": "^14.0.8",
     "expo-sqlite": "^16.0.10",
+    "expo-updates": "^55.0.15",
     "react-native-view-shot": "^4.0.3",
     "xlsx": "^0.18.5"
   }
