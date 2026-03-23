@@ -53,7 +53,9 @@ export default function InicioScreen() {
     enArchivo: { codigo: string; nombre: string }[];
     yaEnBD: { codigo: string; nombre: string }[];
     productosUnicos: { codigo: string; nombre: string; stock_sistema: number; imeis_sistema: string | null }[];
+    productosOriginales: { codigo: string; nombre: string; stock_sistema: number; imeis_sistema: string | null }[];
     auditoriaId: number;
+    erroresArchivo: string[];
   } | null>(null);
 
   const cargar = useCallback(async () => {
@@ -158,7 +160,14 @@ export default function InicioScreen() {
             stock_sistema: p.stock_sistema,
             imeis_sistema: p.imeis_sistema ?? null,
           })),
+          productosOriginales: productos.map((p) => ({
+            codigo: p.codigo,
+            nombre: p.nombre,
+            stock_sistema: p.stock_sistema,
+            imeis_sistema: p.imeis_sistema ?? null,
+          })),
           auditoriaId: audId,
+          erroresArchivo: errores,
         });
         return;
       }
@@ -583,10 +592,10 @@ export default function InicioScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.dupTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
-                  Duplicados encontrados
+                  ¿Omitir duplicados?
                 </Text>
                 <Text style={[styles.dupSub, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                  Revisá la lista antes de importar
+                  Se encontraron códigos repetidos
                 </Text>
               </View>
             </View>
@@ -643,25 +652,31 @@ export default function InicioScreen() {
 
             <View style={styles.dupButtons}>
               <TouchableOpacity
-                style={[styles.dupBtn, { backgroundColor: C.surfaceBorder }]}
-                onPress={() => setDuplicadosInfo(null)}
-              >
-                <Text style={[styles.dupBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
-                  Cancelar
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dupBtn, { backgroundColor: C.primary, flex: 1.5 }]}
+                style={[styles.dupBtn, { backgroundColor: C.surfaceBorder, flex: 1 }]}
                 onPress={async () => {
                   if (!duplicadosInfo) return;
                   const info = duplicadosInfo;
                   setDuplicadosInfo(null);
-                  await ejecutarImport(info.productosUnicos, info.auditoriaId);
+                  await ejecutarImport(info.productosOriginales, info.auditoriaId, info.erroresArchivo);
                 }}
               >
-                <Feather name="download" size={15} color="#fff" />
+                <Text style={[styles.dupBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  No
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dupBtn, { backgroundColor: C.primary, flex: 1 }]}
+                onPress={async () => {
+                  if (!duplicadosInfo) return;
+                  const info = duplicadosInfo;
+                  setDuplicadosInfo(null);
+                  const codigosEnBD = new Set(info.yaEnBD.map((d) => d.codigo));
+                  const soloUnicos = info.productosUnicos.filter((p) => !codigosEnBD.has(p.codigo));
+                  await ejecutarImport(soloUnicos, info.auditoriaId, info.erroresArchivo);
+                }}
+              >
                 <Text style={[styles.dupBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
-                  Omitir y continuar
+                  Sí
                 </Text>
               </TouchableOpacity>
             </View>
