@@ -96,7 +96,7 @@ export default function InicioScreen() {
       setIsImporting(true);
       setImportProgress("Leyendo archivo Excel...");
 
-      const { productos, errores } = await parsearExcel(result.assets[0].uri);
+      const { productos, errores, diagnostico } = await parsearExcel(result.assets[0].uri);
 
       if (productos.length === 0) {
         Alert.alert(
@@ -127,6 +127,7 @@ export default function InicioScreen() {
       let mensaje = `${insertados} productos importados correctamente.`;
       if (errImp.length > 0) mensaje += `\n\nAdvertencias:\n${errImp.slice(0, 3).join("\n")}`;
       if (errores.length > 0) mensaje += `\n\nAvisos del archivo:\n${errores.slice(0, 3).join("\n")}`;
+      if (diagnostico) mensaje += `\n\n[Info] ${diagnostico}`;
 
       Alert.alert("Importación completada", mensaje, [
         {
