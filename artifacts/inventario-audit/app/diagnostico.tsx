@@ -38,26 +38,34 @@ export default function DiagnosticoScreen() {
               const range = utils.decode_range(ref);
               const nrows = range.e.r + 1;
               const ncols = range.e.c + 1;
-              const rows = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
+              const getCell = (r: number, c: number) => {
+                const cell = ws[utils.encode_cell({ r, c })];
+                return cell ? String(cell.v ?? "") : "";
+              };
               let conCodigo = 0;
-              for (let i = 1; i < rows.length; i++) {
-                const r = rows[i] as unknown[];
-                if (String(r[0] ?? "").trim()) conCodigo++;
+              for (let r = 1; r <= range.e.r; r++) {
+                if (getCell(r, 0).trim()) conCodigo++;
               }
               txt += "--- Hoja: " + name + " ---\n";
               txt += "Ref: " + ref + "\n";
-              txt += "Filas según ref: " + nrows + "\n";
-              txt += "Filas leídas: " + rows.length + "\n";
+              txt += "Filas en ref: " + nrows + "\n";
               txt += "Columnas: " + ncols + "\n";
-              txt += "Filas con código (col A): " + conCodigo + "\n\n";
-              txt += "ENCABEZADO:\n" + JSON.stringify(rows[0]) + "\n\n";
-              txt += "PRIMERAS 5 FILAS DE DATOS:\n";
-              for (let i = 1; i <= 5 && i < rows.length; i++) {
-                txt += "F" + i + ": " + JSON.stringify(rows[i]) + "\n";
+              txt += "Filas CON CÓDIGO (col A): " + conCodigo + "\n\n";
+              txt += "FILA 1 (encabezado?):\n";
+              const h = [];
+              for (let c = 0; c < ncols; c++) h.push(getCell(0, c));
+              txt += JSON.stringify(h) + "\n\n";
+              txt += "FILAS 2-6 (primeros datos):\n";
+              for (let r = 1; r <= 5 && r <= range.e.r; r++) {
+                const row = [];
+                for (let c = 0; c < Math.min(ncols, 5); c++) row.push(getCell(r, c));
+                txt += "F" + (r + 1) + ": " + JSON.stringify(row) + "\n";
               }
-              txt += "\nÚLTIMAS 3 FILAS:\n";
-              for (let i = Math.max(6, rows.length - 3); i < rows.length; i++) {
-                txt += "F" + i + ": " + JSON.stringify(rows[i]) + "\n";
+              txt += "\nFILAS FINALES:\n";
+              for (let r = Math.max(1, range.e.r - 2); r <= range.e.r; r++) {
+                const row = [];
+                for (let c = 0; c < Math.min(ncols, 5); c++) row.push(getCell(r, c));
+                txt += "F" + (r + 1) + ": " + JSON.stringify(row) + "\n";
               }
               txt += "================\n\n";
             });

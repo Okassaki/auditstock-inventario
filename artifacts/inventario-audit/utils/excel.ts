@@ -78,36 +78,37 @@ export async function parsearExcel(uri: string, file?: File): Promise<{
       const ncols = sheetRange.e.c + 1;
       const nrows = sheetRange.e.r + 1;
 
-      // Lee TODAS las filas como arrays, celdas vacías = ""
-      const rows = utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+      diagLines.push(`Hoja "${sheetName}": ref ${sheetRef} | ${nrows} filas | ${ncols} cols | archivo ${uint8Array.length} bytes`);
 
-      console.log(`[parsearExcel] Hoja "${sheetName}": ref=${sheetRef} nrows=${nrows} ncols=${ncols} rows.length=${rows.length} bytes=${uint8Array.length}`);
+      if (nrows === 0) continue;
 
-      diagLines.push(`Hoja "${sheetName}": ref ${sheetRef} | ${nrows} filas (ref) | ${rows.length} filas leídas | ${ncols} cols | archivo ${uint8Array.length} bytes`);
-
-      if (rows.length === 0) continue;
+      /** Lee el valor de una celda por fila/columna, devuelve "" si vacía */
+      const getCell = (r: number, c: number): unknown => {
+        const cellAddr = utils.encode_cell({ r, c });
+        const cell = sheet[cellAddr];
+        if (!cell) return "";
+        // Usar valor formateado para texto, numérico para números
+        return cell.v ?? "";
+      };
 
       // Detectar si la primera fila es encabezado (texto en col 0 o col 2)
-      const fila0 = rows[0] as unknown[];
-      const col0 = String(fila0[0] ?? "").trim();
-      const col2 = String(fila0[2] ?? "").trim();
-      const esEncabezado = isNaN(Number(col0)) || isNaN(Number(col2));
+      const col0h = String(getCell(0, 0)).trim();
+      const col2h = String(getCell(0, 2)).trim();
+      const esEncabezado = isNaN(Number(col0h)) || isNaN(Number(col2h));
       const inicio = esEncabezado ? 1 : 0;
-
-      console.log(`[parsearExcel] col0="${col0}" col2="${col2}" esEncabezado=${esEncabezado} inicio=${inicio}`);
 
       // Calcular cuántos grupos de 3 columnas caben
       const numGrupos = Math.max(1, Math.floor(ncols / 3));
 
-      for (let i = inicio; i < rows.length; i++) {
-        const row = rows[i] as unknown[];
+      // Iterar celda a celda — NO usa sheet_to_json para evitar truncamiento en browser
+      for (let i = inicio; i <= sheetRange.e.r; i++) {
         const rowNum = i + 1;
 
         for (let g = 0; g < numGrupos; g++) {
           const offset = g * 3;
-          const codigoRaw = row[offset];
-          const nombreRaw = row[offset + 1];
-          const stockRaw  = row[offset + 2];
+          const codigoRaw = getCell(i, offset);
+          const nombreRaw = getCell(i, offset + 1);
+          const stockRaw  = getCell(i, offset + 2);
 
           const codigo = String(codigoRaw ?? "").trim();
           const nombre = String(nombreRaw ?? "").trim();

@@ -46,6 +46,7 @@ export default function InicioScreen() {
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [auditoriaAEliminar, setAuditoriaAEliminar] = useState<Auditoria | null>(null);
+  const [resultModal, setResultModal] = useState<{ titulo: string; mensaje: string; audId?: number } | null>(null);
 
   const cargar = useCallback(async () => {
     const list = await cargarAuditorias();
@@ -134,22 +135,16 @@ export default function InicioScreen() {
       const { productos, errores, diagnostico } = await parsearExcel(fileUri, nativeFile);
 
       if (productos.length === 0) {
-        Alert.alert(
-          "Sin datos",
-          errores.length > 0
-            ? `No se pudieron leer productos.\n\nErrores:\n${errores.slice(0, 5).join("\n")}`
-            : "El archivo no contiene productos válidos."
-        );
         setIsImporting(false);
+        const msg = errores.length > 0
+          ? `No se pudieron leer productos.\n\nErrores:\n${errores.slice(0, 5).join("\n")}`
+          : "El archivo no contiene productos válidos.";
+        setResultModal({ titulo: "Sin datos", mensaje: msg });
         return;
       }
 
       const parsedCount = productos.length;
-      // Mostrar info del archivo antes de guardar (2 segundos visibles)
-      setImportProgress(
-        `Archivo: ${diagnostico ?? "?"}\n\nProductos leídos: ${parsedCount}\nGuardando...`
-      );
-      await new Promise((r) => setTimeout(r, 3000));
+      setImportProgress(`Leídos: ${parsedCount} productos\nGuardando en base de datos...`);
 
       const { insertados, duplicados, errores: errImp, info: infoImp } = await importarProductos(
         productos.map((p) => ({
@@ -167,27 +162,17 @@ export default function InicioScreen() {
       let mensaje = "";
       if (diagnostico) mensaje += `📄 ${diagnostico}\n\n`;
       mensaje += `Leídos del Excel: ${parsedCount}\nGuardados en BD: ${insertados}`;
-      if (duplicados > 0) mensaje += ` (${duplicados} actualizados)`;
+      if (duplicados > 0) mensaje += `\n(${duplicados} actualizados)`;
       if (infoImp) mensaje += `\n[${infoImp}]`;
       if (errImp.length > 0) mensaje += `\n\nAdvertencias:\n${errImp.slice(0, 5).join("\n")}`;
       if (errores.length > 0) mensaje += `\n\nAvisos del archivo:\n${errores.slice(0, 3).join("\n")}`;
 
-      Alert.alert("Importación completada", mensaje, [
-        {
-          text: "Ir a Conteo",
-          onPress: async () => {
-            await cargarAuditoria(audId);
-            router.push("/(tabs)/conteo");
-          },
-        },
-        { text: "OK" },
-      ]);
-
+      setResultModal({ titulo: "Importación completada ✓", mensaje, audId });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await cargar();
     } catch (e) {
       setIsImporting(false);
-      Alert.alert("Error", String(e));
+      setResultModal({ titulo: "Error al importar", mensaje: String(e) });
     }
   };
 
@@ -496,6 +481,50 @@ export default function InicioScreen() {
                     Crear
                   </Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal resultado importación — reemplaza Alert.alert (no funciona en móvil web) */}
+      <Modal
+        visible={!!resultModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setResultModal(null)}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
+          <View style={[styles.confirmBox, { backgroundColor: C.surface }]}>
+            <Text style={[styles.confirmTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+              {resultModal?.titulo}
+            </Text>
+            <Text style={[styles.confirmDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+              {resultModal?.mensaje}
+            </Text>
+            <View style={styles.confirmButtons}>
+              {resultModal?.audId != null && (
+                <TouchableOpacity
+                  style={[styles.confirmBtn, { backgroundColor: C.primary }]}
+                  onPress={async () => {
+                    const id = resultModal.audId!;
+                    setResultModal(null);
+                    await cargarAuditoria(id);
+                    router.push("/(tabs)/conteo");
+                  }}
+                >
+                  <Text style={[styles.confirmBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
+                    Ir a Conteo
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: C.surfaceBorder }]}
+                onPress={() => setResultModal(null)}
+              >
+                <Text style={[styles.confirmBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  OK
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
