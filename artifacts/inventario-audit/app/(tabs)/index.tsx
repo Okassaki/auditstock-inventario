@@ -37,6 +37,7 @@ export default function InicioScreen() {
     eliminarAuditoria,
     limpiarAuditoriaActual,
     importarProductos,
+    verificarCodigosExistentes,
   } = useDatabase();
 
   const [auditorias, setAuditorias] = useState<Auditoria[]>([]);
@@ -46,6 +47,14 @@ export default function InicioScreen() {
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [auditoriaAEliminar, setAuditoriaAEliminar] = useState<Auditoria | null>(null);
+
+  const [duplicadosInfo, setDuplicadosInfo] = useState<{
+    visible: boolean;
+    enArchivo: { codigo: string; nombre: string }[];
+    yaEnBD: { codigo: string; nombre: string }[];
+    productosUnicos: { codigo: string; nombre: string; stock_sistema: number; imeis_sistema: string | null }[];
+    auditoriaId: number;
+  } | null>(null);
 
   const cargar = useCallback(async () => {
     const list = await cargarAuditorias();
@@ -109,24 +118,83 @@ export default function InicioScreen() {
         return;
       }
 
-      setImportProgress(`Importando ${productos.length} productos...`);
+      setImportProgress("Verificando duplicados...");
 
+      // 1. Detectar duplicados dentro del archivo (mismo código más de una vez)
+      const seenCodes = new Map<string, string>(); // codigo -> nombre
+      const enArchivo: { codigo: string; nombre: string }[] = [];
+      const productosUnicos: typeof productos = [];
+
+      for (const p of productos) {
+        if (seenCodes.has(p.codigo)) {
+          if (!enArchivo.find((d) => d.codigo === p.codigo)) {
+            enArchivo.push({ codigo: p.codigo, nombre: p.nombre });
+          }
+        } else {
+          seenCodes.set(p.codigo, p.nombre);
+          productosUnicos.push(p);
+        }
+      }
+
+      // 2. Detectar códigos del archivo que ya existen en la auditoría (base de datos)
+      const codigosUnicos = productosUnicos.map((p) => p.codigo);
+      const codigosEnBD = await verificarCodigosExistentes(codigosUnicos, audId);
+      const yaEnBD = codigosEnBD.map((codigo) => ({
+        codigo,
+        nombre: seenCodes.get(codigo) ?? codigo,
+      }));
+
+      setIsImporting(false);
+
+      // 3. Si hay algún tipo de duplicado, mostrar modal de confirmación
+      if (enArchivo.length > 0 || yaEnBD.length > 0) {
+        setDuplicadosInfo({
+          visible: true,
+          enArchivo,
+          yaEnBD,
+          productosUnicos: productosUnicos.map((p) => ({
+            codigo: p.codigo,
+            nombre: p.nombre,
+            stock_sistema: p.stock_sistema,
+            imeis_sistema: p.imeis_sistema ?? null,
+          })),
+          auditoriaId: audId,
+        });
+        return;
+      }
+
+      // 4. Sin duplicados: importar directamente
+      await ejecutarImport(productosUnicos.map((p) => ({
+        codigo: p.codigo,
+        nombre: p.nombre,
+        stock_sistema: p.stock_sistema,
+        imeis_sistema: p.imeis_sistema ?? null,
+      })), audId, errores);
+    } catch (e) {
+      setIsImporting(false);
+      Alert.alert("Error", String(e));
+    }
+  };
+
+  const ejecutarImport = async (
+    productosAImportar: { codigo: string; nombre: string; stock_sistema: number; imeis_sistema: string | null }[],
+    audId: number,
+    erroresArchivo: string[] = []
+  ) => {
+    setIsImporting(true);
+    setImportProgress(`Importando ${productosAImportar.length} productos...`);
+    try {
       const { insertados, duplicados, errores: errImp } = await importarProductos(
-        productos.map((p) => ({
-          codigo: p.codigo,
-          nombre: p.nombre,
-          stock_sistema: p.stock_sistema,
-          imeis_sistema: p.imeis_sistema ?? null,
-        })),
+        productosAImportar,
         audId
       );
 
       setIsImporting(false);
 
       let mensaje = `${insertados} productos importados correctamente.`;
-      if (duplicados > 0) mensaje += `\n${duplicados} duplicados omitidos.`;
+      if (duplicados > 0) mensaje += `\n${duplicados} ya existían y fueron omitidos.`;
       if (errImp.length > 0) mensaje += `\n\nAdvertencias:\n${errImp.slice(0, 3).join("\n")}`;
-      if (errores.length > 0) mensaje += `\n\nAvisos del archivo:\n${errores.slice(0, 3).join("\n")}`;
+      if (erroresArchivo.length > 0) mensaje += `\n\nAvisos del archivo:\n${erroresArchivo.slice(0, 3).join("\n")}`;
 
       Alert.alert("Importación completada", mensaje, [
         {
@@ -499,6 +567,107 @@ export default function InicioScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal de duplicados */}
+      <Modal
+        visible={!!duplicadosInfo?.visible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setDuplicadosInfo(null)}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+          <View style={[styles.dupModal, { backgroundColor: C.surface }]}>
+            <View style={styles.dupHeader}>
+              <View style={[styles.dupIconWrap, { backgroundColor: "#f59e0b18" }]}>
+                <Feather name="alert-triangle" size={24} color="#f59e0b" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dupTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                  Duplicados encontrados
+                </Text>
+                <Text style={[styles.dupSub, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                  Revisá la lista antes de importar
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView style={styles.dupScroll} showsVerticalScrollIndicator={false}>
+              {duplicadosInfo && duplicadosInfo.enArchivo.length > 0 && (
+                <View style={styles.dupSection}>
+                  <View style={[styles.dupSectionHeader, { backgroundColor: "#f59e0b18" }]}>
+                    <Feather name="copy" size={14} color="#f59e0b" />
+                    <Text style={[styles.dupSectionTitle, { color: "#f59e0b", fontFamily: "Inter_600SemiBold" }]}>
+                      Repetidos en el archivo ({duplicadosInfo.enArchivo.length})
+                    </Text>
+                  </View>
+                  <Text style={[styles.dupSectionDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                    Aparecen más de una vez en el Excel. Solo se importa la primera fila de cada código.
+                  </Text>
+                  {duplicadosInfo.enArchivo.map((d) => (
+                    <View key={d.codigo} style={[styles.dupItem, { borderLeftColor: "#f59e0b" }]}>
+                      <Text style={[styles.dupCodigo, { color: C.primary, fontFamily: "Inter_600SemiBold" }]}>
+                        {d.codigo}
+                      </Text>
+                      <Text style={[styles.dupNombre, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
+                        {d.nombre}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {duplicadosInfo && duplicadosInfo.yaEnBD.length > 0 && (
+                <View style={styles.dupSection}>
+                  <View style={[styles.dupSectionHeader, { backgroundColor: "#3b82f618" }]}>
+                    <Feather name="database" size={14} color="#3b82f6" />
+                    <Text style={[styles.dupSectionTitle, { color: "#3b82f6", fontFamily: "Inter_600SemiBold" }]}>
+                      Ya importados antes ({duplicadosInfo.yaEnBD.length})
+                    </Text>
+                  </View>
+                  <Text style={[styles.dupSectionDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                    Ya existen en esta auditoría. Se omitirán para no sobreescribir datos.
+                  </Text>
+                  {duplicadosInfo.yaEnBD.map((d) => (
+                    <View key={d.codigo} style={[styles.dupItem, { borderLeftColor: "#3b82f6" }]}>
+                      <Text style={[styles.dupCodigo, { color: C.primary, fontFamily: "Inter_600SemiBold" }]}>
+                        {d.codigo}
+                      </Text>
+                      <Text style={[styles.dupNombre, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
+                        {d.nombre}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.dupButtons}>
+              <TouchableOpacity
+                style={[styles.dupBtn, { backgroundColor: C.surfaceBorder }]}
+                onPress={() => setDuplicadosInfo(null)}
+              >
+                <Text style={[styles.dupBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dupBtn, { backgroundColor: C.primary, flex: 1.5 }]}
+                onPress={async () => {
+                  if (!duplicadosInfo) return;
+                  const info = duplicadosInfo;
+                  setDuplicadosInfo(null);
+                  await ejecutarImport(info.productosUnicos, info.auditoriaId);
+                }}
+              >
+                <Feather name="download" size={15} color="#fff" />
+                <Text style={[styles.dupBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
+                  Omitir y continuar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -677,4 +846,61 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   confirmBtnText: { fontSize: 15 },
+  dupModal: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  dupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  dupIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dupTitle: { fontSize: 18 },
+  dupSub: { fontSize: 13, marginTop: 2 },
+  dupScroll: { maxHeight: 320 },
+  dupSection: { marginBottom: 16 },
+  dupSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  dupSectionTitle: { fontSize: 13 },
+  dupSectionDesc: { fontSize: 12, lineHeight: 16, marginBottom: 8, paddingHorizontal: 2 },
+  dupItem: {
+    borderLeftWidth: 3,
+    paddingLeft: 10,
+    paddingVertical: 4,
+    marginBottom: 4,
+  },
+  dupCodigo: { fontSize: 13 },
+  dupNombre: { fontSize: 12 },
+  dupButtons: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
+  dupBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  dupBtnText: { fontSize: 15 },
 });

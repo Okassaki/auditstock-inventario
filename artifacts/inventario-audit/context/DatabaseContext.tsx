@@ -107,6 +107,7 @@ interface DBContextValue {
     productos: Omit<ProductoInventario, "id" | "stock_fisico" | "auditoria_id" | "imeis_fisicos" | "inconsistencias">[],
     auditoriaId: number
   ) => Promise<{ insertados: number; duplicados: number; errores: string[] }>;
+  verificarCodigosExistentes: (codigos: string[], auditoriaId: number) => Promise<string[]>;
   actualizarConteo: (
     productoId: number,
     stockFisico: number,
@@ -385,6 +386,32 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const verificarCodigosExistentes = useCallback(
+    async (codigos: string[], auditoriaId: number): Promise<string[]> => {
+      const existentes: string[] = [];
+      if (dbRef.current) {
+        for (const codigo of codigos) {
+          const existe = await dbRef.current.getFirstAsync(
+            "SELECT id FROM productos WHERE codigo = ? AND auditoria_id = ?",
+            [codigo, auditoriaId]
+          );
+          if (existe) existentes.push(codigo);
+        }
+      } else {
+        const existingCodes = new Set(
+          storeRef.current.prods
+            .filter((p) => p.auditoria_id === auditoriaId)
+            .map((p) => p.codigo)
+        );
+        for (const codigo of codigos) {
+          if (existingCodes.has(codigo)) existentes.push(codigo);
+        }
+      }
+      return existentes;
+    },
+    []
+  );
+
   const actualizarConteo = useCallback(
     async (productoId: number, stockFisico: number, imeisFisicos?: string[]) => {
       if (stockFisico < 0) throw new Error("El stock físico no puede ser negativo");
@@ -484,6 +511,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         cargarAuditorias,
         cargarAuditoria,
         importarProductos,
+        verificarCodigosExistentes,
         actualizarConteo,
         eliminarAuditoria,
         limpiarAuditoriaActual,
