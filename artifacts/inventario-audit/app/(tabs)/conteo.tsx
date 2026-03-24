@@ -286,7 +286,6 @@ export default function ConteoScreen() {
                     },
                   ]}
                   keyboardType="number-pad"
-                  textAlign="center"
                   selectTextOnFocus
                 />
                 <TouchableOpacity
@@ -516,6 +515,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     fontSize: 26,
+    textAlign: "center",
+    textAlignVertical: "center",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   imeiSection: { gap: 10 },
   imeiInputRow: { flexDirection: "row", gap: 8 },
