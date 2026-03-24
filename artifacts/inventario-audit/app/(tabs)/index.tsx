@@ -187,15 +187,25 @@ export default function InicioScreen() {
     }
   };
 
-  const handleSeleccionar = (aud: Auditoria) => {
+  const handleSeleccionar = async (aud: Auditoria) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Si ya tiene auditores registrados, activa directamente sin preguntar
+    if (aud.auditor1) {
+      await cargarAuditoria(aud.id);
+      return;
+    }
+    // Primera vez: pide auditores
     setAuditoriaParaActivar(aud);
-    setActivarAud1(aud.auditor1 ?? "");
-    setActivarAud2(aud.auditor2 ?? "");
+    setActivarAud1("");
+    setActivarAud2("");
   };
 
   const handleActivar = async () => {
     if (!auditoriaParaActivar) return;
+    if (!activarAud1.trim()) {
+      Alert.alert("Auditor requerido", "Debe registrar al menos el nombre del Auditor 1.");
+      return;
+    }
     setIsActivating(true);
     try {
       await actualizarAuditores(auditoriaParaActivar.id, activarAud1, activarAud2);
@@ -596,7 +606,7 @@ export default function InicioScreen() {
               contentContainerStyle={{ gap: 12 }}
             >
               <Text style={[styles.modalTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
-                Activar auditoría
+                Registrar auditores
               </Text>
               <Text
                 style={[styles.audNombre, { color: C.primary, fontFamily: "Inter_600SemiBold", fontSize: 15 }]}
@@ -604,9 +614,12 @@ export default function InicioScreen() {
               >
                 {auditoriaParaActivar?.nombre}
               </Text>
-              <Text style={[styles.modalDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                ¿Quién realizará el conteo en esta sesión?
-              </Text>
+              <View style={[styles.warningBox, { backgroundColor: `${C.danger}18`, borderColor: `${C.danger}55` }]}>
+                <Feather name="alert-triangle" size={16} color={C.danger} />
+                <Text style={[styles.warningText, { color: C.danger, fontFamily: "Inter_600SemiBold" }]}>
+                  Elige bien. Los auditores solo se pueden registrar una vez y serán los responsables de esta auditoría.
+                </Text>
+              </View>
               <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
                 AUDITOR 1
               </Text>
@@ -895,6 +908,15 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20 },
   modalDesc: { fontSize: 14, lineHeight: 20 },
   auditorLabel: { fontSize: 11, letterSpacing: 0.7, marginBottom: -6 },
+  warningBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  warningText: { fontSize: 13, lineHeight: 18, flex: 1 },
   auditoresRow: {
     flexDirection: "row",
     alignItems: "center",

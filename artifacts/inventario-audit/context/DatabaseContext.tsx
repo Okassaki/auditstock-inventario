@@ -509,19 +509,20 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     const a1 = auditor1.trim() || null;
     const a2 = auditor2.trim() || null;
     if (dbRef.current) {
+      // Solo actualiza si aún no tienen auditores registrados
       await dbRef.current.runAsync(
-        "UPDATE auditorias SET auditor1 = ?, auditor2 = ? WHERE id = ?",
+        "UPDATE auditorias SET auditor1 = ?, auditor2 = ? WHERE id = ? AND (auditor1 IS NULL OR auditor1 = '')",
         [a1, a2, id]
       );
     } else {
       storeRef.current.auds = storeRef.current.auds.map((a) =>
-        a.id === id ? { ...a, auditor1: a1, auditor2: a2 } : a
+        a.id === id && !a.auditor1 ? { ...a, auditor1: a1, auditor2: a2 } : a
       );
       await saveAuditorias(storeRef.current.auds);
     }
-    // Actualiza el estado si es la auditoría activa
+    // Actualiza el estado si es la auditoría activa y aún no tenía auditores
     setAuditoriaActual((prev) =>
-      prev?.id === id ? { ...prev, auditor1: a1, auditor2: a2 } : prev
+      prev?.id === id && !prev.auditor1 ? { ...prev, auditor1: a1, auditor2: a2 } : prev
     );
   }, []);
 
