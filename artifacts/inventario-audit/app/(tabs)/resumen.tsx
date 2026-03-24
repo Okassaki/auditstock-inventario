@@ -40,7 +40,7 @@ interface ResumenItem {
 }
 
 const FORMATOS: { key: Formato; icon: string; label: string; desc: string; color: string }[] = [
-  { key: "excel", icon: "grid", label: "XLSX", desc: "Compatible con PC y celular", color: "#22c55e" },
+  { key: "excel", icon: "grid", label: "Excel", desc: "Compatible con PC y celular", color: "#22c55e" },
   { key: "pdf", icon: "file-text", label: "PDF", desc: "Ideal para imprimir y compartir", color: "#3b82f6" },
   { key: "imagen", icon: "image", label: "Imagen", desc: "Para enviar rápido por WhatsApp", color: "#a855f7" },
 ];
