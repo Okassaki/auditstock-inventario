@@ -19,6 +19,7 @@ export interface ProductoInventario {
   imeis_fisicos: string | null;
   auditoria_id: number;
   inconsistencias: string | null;
+  comentario: string | null;
 }
 
 export interface Auditoria {
@@ -174,11 +175,20 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
               imeis_fisicos TEXT,
               auditoria_id INTEGER NOT NULL,
               inconsistencias TEXT,
+              comentario TEXT,
               FOREIGN KEY (auditoria_id) REFERENCES auditorias(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_productos_auditoria ON productos(auditoria_id);
             CREATE INDEX IF NOT EXISTS idx_productos_codigo ON productos(codigo);
           `);
+          // Migration: add comentario column to existing databases
+          try {
+            await dbRef.current.runAsync(
+              "ALTER TABLE productos ADD COLUMN comentario TEXT;"
+            );
+          } catch {
+            // Column already exists — ignore
+          }
         } else {
           // Fallback to AsyncStorage on native if SQLite fails
           const { auds, prods } = await loadStore();
@@ -406,6 +416,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             imeis_fisicos: null,
             auditoria_id: auditoriaId,
             inconsistencias: null,
+            comentario: null,
           });
           existingCodes.add(prod.codigo);
           insertados++;
@@ -462,18 +473,21 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   );
 
   const actualizarConteo = useCallback(
-    async (productoId: number, stockFisico: number, imeisFisicos?: string[]) => {
+    async (productoId: number, stockFisico: number, imeisFisicos?: string[], comentario?: string) => {
       if (stockFisico < 0) throw new Error("El stock físico no puede ser negativo");
       const imeisFisicosStr = imeisFisicos && imeisFisicos.length > 0 ? imeisFisicos.join(",") : null;
+      const comentarioStr = comentario?.trim() || null;
 
       if (dbRef.current) {
         await dbRef.current.runAsync(
-          "UPDATE productos SET stock_fisico = ?, imeis_fisicos = ? WHERE id = ?",
-          [stockFisico, imeisFisicosStr, productoId]
+          "UPDATE productos SET stock_fisico = ?, imeis_fisicos = ?, comentario = ? WHERE id = ?",
+          [stockFisico, imeisFisicosStr, comentarioStr, productoId]
         );
       } else {
         storeRef.current.prods = storeRef.current.prods.map((p) =>
-          p.id === productoId ? { ...p, stock_fisico: stockFisico, imeis_fisicos: imeisFisicosStr } : p
+          p.id === productoId
+            ? { ...p, stock_fisico: stockFisico, imeis_fisicos: imeisFisicosStr, comentario: comentarioStr }
+            : p
         );
         await saveProductos(storeRef.current.prods);
       }

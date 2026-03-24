@@ -43,6 +43,7 @@ export function ProductoCard({ producto, onPress }: ProductoCardProps) {
 
   const hasImeis = !!producto.imeis_sistema;
   const hasInconsistencias = !!producto.inconsistencias;
+  const hasComentario = !!producto.comentario && diff !== 0;
 
   return (
     <TouchableOpacity
@@ -142,6 +143,36 @@ export function ProductoCard({ producto, onPress }: ProductoCardProps) {
           <Feather name="alert-triangle" size={12} color={C.danger} />
           <Text style={[styles.alertText, { color: C.danger, fontFamily: "Inter_400Regular" }]}>
             {producto.inconsistencias}
+          </Text>
+        </View>
+      )}
+
+      {hasComentario && (
+        <View
+          style={[
+            styles.alertRow,
+            {
+              backgroundColor:
+                estado === "faltante" ? `${C.danger}15` : `${C.warning}15`,
+            },
+          ]}
+        >
+          <Feather
+            name="message-square"
+            size={12}
+            color={estado === "faltante" ? C.danger : C.warning}
+          />
+          <Text
+            style={[
+              styles.alertText,
+              {
+                color: estado === "faltante" ? C.danger : C.warning,
+                fontFamily: "Inter_400Regular",
+              },
+            ]}
+            numberOfLines={2}
+          >
+            {producto.comentario}
           </Text>
         </View>
       )}

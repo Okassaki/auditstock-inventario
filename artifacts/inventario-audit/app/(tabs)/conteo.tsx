@@ -6,6 +6,7 @@ import {
   FlatList,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -41,6 +42,7 @@ export default function ConteoScreen() {
   const [imeisList, setImeisList] = useState<string[]>([]);
   const [showImeiScanner, setShowImeiScanner] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [comentarioInput, setComentarioInput] = useState("");
 
   const productosFiltrados = useMemo(() => {
     if (!query.trim()) return productos;
@@ -68,6 +70,7 @@ export default function ConteoScreen() {
       : [];
     setImeisList(imeis);
     setImeiInput("");
+    setComentarioInput(p.comentario ?? "");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -78,9 +81,24 @@ export default function ConteoScreen() {
       Alert.alert("Stock inválido", "Ingresa un número mayor o igual a 0.");
       return;
     }
+    const hayDiferencia = stock !== selectedProduct.stock_sistema;
+    if (hayDiferencia && !comentarioInput.trim()) {
+      Alert.alert(
+        "Comentario requerido",
+        stock < selectedProduct.stock_sistema
+          ? "¿Por qué falta stock? Ingresa un motivo antes de guardar."
+          : "¿Por qué hay stock de más? Ingresa un motivo antes de guardar."
+      );
+      return;
+    }
     setIsSaving(true);
     try {
-      await actualizarConteo(selectedProduct.id, stock, imeisList);
+      await actualizarConteo(
+        selectedProduct.id,
+        stock,
+        imeisList,
+        hayDiferencia ? comentarioInput.trim() : undefined
+      );
       setSelectedProduct(null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -204,6 +222,12 @@ export default function ConteoScreen() {
               ]}
             >
               <View style={styles.modalHandle} />
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ gap: 14 }}
+              >
 
               <View style={[styles.productHeader, { backgroundColor: C.surfaceElevated, borderRadius: 12, padding: 14 }]}>
                 <Text style={[styles.productCodigo, { color: C.primary, fontFamily: "Inter_600SemiBold" }]}>
@@ -333,6 +357,50 @@ export default function ConteoScreen() {
                   ))}
                 </View>
               )}
+
+              {stockInput !== "" &&
+                parseInt(stockInput, 10) !== selectedProduct.stock_sistema && (
+                  <View style={styles.comentarioSection}>
+                    <Text
+                      style={[
+                        styles.inputLabel,
+                        {
+                          color:
+                            parseInt(stockInput, 10) < selectedProduct.stock_sistema
+                              ? C.danger
+                              : C.warning,
+                          fontFamily: "Inter_600SemiBold",
+                        },
+                      ]}
+                    >
+                      {parseInt(stockInput, 10) < selectedProduct.stock_sistema
+                        ? "⚠️ FALTANTE — ¿POR QUÉ FALTA?"
+                        : "⚠️ SOBRANTE — ¿POR QUÉ HAY MÁS?"}
+                    </Text>
+                    <TextInput
+                      value={comentarioInput}
+                      onChangeText={setComentarioInput}
+                      placeholder="Describe el motivo de la diferencia..."
+                      placeholderTextColor={C.textMuted}
+                      multiline
+                      numberOfLines={3}
+                      style={[
+                        styles.comentarioInput,
+                        {
+                          backgroundColor: C.surfaceElevated,
+                          borderColor:
+                            parseInt(stockInput, 10) < selectedProduct.stock_sistema
+                              ? C.danger
+                              : C.warning,
+                          color: C.text,
+                          fontFamily: "Inter_400Regular",
+                        },
+                      ]}
+                    />
+                  </View>
+                )}
+
+              </ScrollView>
 
               <View style={styles.modalBtns}>
                 <TouchableOpacity
@@ -482,6 +550,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   imeiChipText: { flex: 1, fontSize: 13 },
+  comentarioSection: { gap: 8 },
+  comentarioInput: {
+    borderWidth: 2,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 4 },
   btnSecondary: {
     flex: 1,
