@@ -117,6 +117,7 @@ interface DBContextValue {
     stockFisico: number,
     imeisFisicos?: string[]
   ) => Promise<void>;
+  actualizarAuditores: (id: number, auditor1: string, auditor2: string) => Promise<void>;
   eliminarAuditoria: (id: number) => Promise<void>;
   limpiarAuditoriaActual: () => void;
   detectarInconsistencias: () => Inconsistencia[];
@@ -504,6 +505,26 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     [refreshProductos]
   );
 
+  const actualizarAuditores = useCallback(async (id: number, auditor1: string, auditor2: string) => {
+    const a1 = auditor1.trim() || null;
+    const a2 = auditor2.trim() || null;
+    if (dbRef.current) {
+      await dbRef.current.runAsync(
+        "UPDATE auditorias SET auditor1 = ?, auditor2 = ? WHERE id = ?",
+        [a1, a2, id]
+      );
+    } else {
+      storeRef.current.auds = storeRef.current.auds.map((a) =>
+        a.id === id ? { ...a, auditor1: a1, auditor2: a2 } : a
+      );
+      await saveAuditorias(storeRef.current.auds);
+    }
+    // Actualiza el estado si es la auditoría activa
+    setAuditoriaActual((prev) =>
+      prev?.id === id ? { ...prev, auditor1: a1, auditor2: a2 } : prev
+    );
+  }, []);
+
   // Solo hace la operación de datos — sin tocar estado React
   const eliminarAuditoria = useCallback(async (id: number) => {
     if (dbRef.current) {
@@ -584,6 +605,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         importarProductos,
         verificarCodigosExistentes,
         actualizarConteo,
+        actualizarAuditores,
         eliminarAuditoria,
         limpiarAuditoriaActual,
         detectarInconsistencias,

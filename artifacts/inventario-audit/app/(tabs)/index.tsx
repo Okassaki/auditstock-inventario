@@ -37,6 +37,7 @@ export default function InicioScreen() {
     eliminarAuditoria,
     limpiarAuditoriaActual,
     importarProductos,
+    actualizarAuditores,
   } = useDatabase();
 
   const [auditorias, setAuditorias] = useState<Auditoria[]>([]);
@@ -45,6 +46,12 @@ export default function InicioScreen() {
   const [auditor1, setAuditor1] = useState("");
   const [auditor2, setAuditor2] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+
+  // Modal de activación (pedir auditores al seleccionar una auditoría existente)
+  const [auditoriaParaActivar, setAuditoriaParaActivar] = useState<Auditoria | null>(null);
+  const [activarAud1, setActivarAud1] = useState("");
+  const [activarAud2, setActivarAud2] = useState("");
+  const [isActivating, setIsActivating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [auditoriaAEliminar, setAuditoriaAEliminar] = useState<Auditoria | null>(null);
@@ -180,9 +187,27 @@ export default function InicioScreen() {
     }
   };
 
-  const handleSeleccionar = async (aud: Auditoria) => {
+  const handleSeleccionar = (aud: Auditoria) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await cargarAuditoria(aud.id);
+    setAuditoriaParaActivar(aud);
+    setActivarAud1(aud.auditor1 ?? "");
+    setActivarAud2(aud.auditor2 ?? "");
+  };
+
+  const handleActivar = async () => {
+    if (!auditoriaParaActivar) return;
+    setIsActivating(true);
+    try {
+      await actualizarAuditores(auditoriaParaActivar.id, activarAud1, activarAud2);
+      await cargarAuditoria(auditoriaParaActivar.id);
+      await cargar();
+      setAuditoriaParaActivar(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert("Error", String(e));
+    } finally {
+      setIsActivating(false);
+    }
   };
 
   const handleEliminar = (aud: Auditoria) => {
@@ -547,6 +572,102 @@ export default function InicioScreen() {
                 ) : (
                   <Text style={[styles.modalBtnPrimaryText, { fontFamily: "Inter_700Bold" }]}>
                     Crear
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de activación — pide auditores al seleccionar una auditoría */}
+      <Modal
+        visible={!!auditoriaParaActivar}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAuditoriaParaActivar(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
+            <View style={styles.modalHandle} />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: 12 }}
+            >
+              <Text style={[styles.modalTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                Activar auditoría
+              </Text>
+              <Text
+                style={[styles.audNombre, { color: C.primary, fontFamily: "Inter_600SemiBold", fontSize: 15 }]}
+                numberOfLines={2}
+              >
+                {auditoriaParaActivar?.nombre}
+              </Text>
+              <Text style={[styles.modalDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                ¿Quién realizará el conteo en esta sesión?
+              </Text>
+              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                AUDITOR 1
+              </Text>
+              <TextInput
+                value={activarAud1}
+                onChangeText={setActivarAud1}
+                placeholder="Nombre completo"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                autoFocus
+                returnKeyType="next"
+              />
+              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                AUDITOR 2{" "}
+                <Text style={{ color: C.textMuted, fontWeight: "400", fontSize: 11 }}>(opcional)</Text>
+              </Text>
+              <TextInput
+                value={activarAud2}
+                onChangeText={setActivarAud2}
+                placeholder="Nombre completo"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                returnKeyType="done"
+                onSubmitEditing={handleActivar}
+              />
+            </ScrollView>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                onPress={() => setAuditoriaParaActivar(null)}
+                style={[styles.modalBtnSecondary, { borderColor: C.surfaceBorder }]}
+              >
+                <Text style={[styles.modalBtnSecondaryText, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleActivar}
+                disabled={isActivating}
+                style={[styles.modalBtnPrimary, { backgroundColor: C.primary }]}
+              >
+                {isActivating ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={[styles.modalBtnPrimaryText, { fontFamily: "Inter_700Bold" }]}>
+                    Activar
                   </Text>
                 )}
               </TouchableOpacity>
