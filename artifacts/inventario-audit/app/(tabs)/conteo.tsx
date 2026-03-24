@@ -43,6 +43,8 @@ export default function ConteoScreen() {
   const [showImeiScanner, setShowImeiScanner] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [comentarioInput, setComentarioInput] = useState("");
+  const [showComentarioModal, setShowComentarioModal] = useState(false);
+  const [pendingStock, setPendingStock] = useState<number | null>(null);
 
   const productosFiltrados = useMemo(() => {
     if (!query.trim()) return productos;
@@ -70,11 +72,10 @@ export default function ConteoScreen() {
       : [];
     setImeisList(imeis);
     setImeiInput("");
-    setComentarioInput(p.comentario ?? "");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const handleGuardar = async () => {
+  const handleGuardar = () => {
     if (!selectedProduct) return;
     const stock = parseInt(stockInput, 10);
     if (isNaN(stock) || stock < 0) {
@@ -82,30 +83,41 @@ export default function ConteoScreen() {
       return;
     }
     const hayDiferencia = stock !== selectedProduct.stock_sistema;
-    if (hayDiferencia && !comentarioInput.trim()) {
-      Alert.alert(
-        "Comentario requerido",
-        stock < selectedProduct.stock_sistema
-          ? "¿Por qué falta stock? Ingresa un motivo antes de guardar."
-          : "¿Por qué hay stock de más? Ingresa un motivo antes de guardar."
-      );
+    if (hayDiferencia) {
+      // Guardamos el stock pendiente y mostramos el modal de comentario
+      setPendingStock(stock);
+      setComentarioInput(selectedProduct.comentario ?? "");
+      setShowComentarioModal(true);
       return;
     }
+    // Sin diferencia: guardar directamente
+    doGuardar(stock, undefined);
+  };
+
+  const doGuardar = async (stock: number, comentario: string | undefined) => {
+    if (!selectedProduct) return;
     setIsSaving(true);
     try {
-      await actualizarConteo(
-        selectedProduct.id,
-        stock,
-        imeisList,
-        hayDiferencia ? comentarioInput.trim() : undefined
-      );
+      await actualizarConteo(selectedProduct.id, stock, imeisList, comentario);
       setSelectedProduct(null);
+      setShowComentarioModal(false);
+      setPendingStock(null);
+      setComentarioInput("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       Alert.alert("Error", String(e));
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleConfirmarComentario = () => {
+    if (!comentarioInput.trim()) {
+      Alert.alert("Comentario requerido", "Debes explicar el motivo de la diferencia antes de guardar.");
+      return;
+    }
+    if (pendingStock === null) return;
+    doGuardar(pendingStock, comentarioInput.trim());
   };
 
   const handleAddImei = (imei: string) => {
@@ -357,48 +369,6 @@ export default function ConteoScreen() {
                 </View>
               )}
 
-              {stockInput !== "" &&
-                parseInt(stockInput, 10) !== selectedProduct.stock_sistema && (
-                  <View style={styles.comentarioSection}>
-                    <Text
-                      style={[
-                        styles.inputLabel,
-                        {
-                          color:
-                            parseInt(stockInput, 10) < selectedProduct.stock_sistema
-                              ? C.danger
-                              : C.warning,
-                          fontFamily: "Inter_600SemiBold",
-                        },
-                      ]}
-                    >
-                      {parseInt(stockInput, 10) < selectedProduct.stock_sistema
-                        ? "⚠️ FALTANTE — ¿POR QUÉ FALTA?"
-                        : "⚠️ SOBRANTE — ¿POR QUÉ HAY MÁS?"}
-                    </Text>
-                    <TextInput
-                      value={comentarioInput}
-                      onChangeText={setComentarioInput}
-                      placeholder="Describe el motivo de la diferencia..."
-                      placeholderTextColor={C.textMuted}
-                      multiline
-                      numberOfLines={3}
-                      style={[
-                        styles.comentarioInput,
-                        {
-                          backgroundColor: C.surfaceElevated,
-                          borderColor:
-                            parseInt(stockInput, 10) < selectedProduct.stock_sistema
-                              ? C.danger
-                              : C.warning,
-                          color: C.text,
-                          fontFamily: "Inter_400Regular",
-                        },
-                      ]}
-                    />
-                  </View>
-                )}
-
               </ScrollView>
 
               <View style={styles.modalBtns}>
@@ -436,6 +406,117 @@ export default function ConteoScreen() {
           }}
           title="Escanear IMEI"
         />
+      </Modal>
+
+      {/* Modal de comentario — aparece tras presionar Guardar cuando hay diferencia */}
+      <Modal
+        visible={showComentarioModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowComentarioModal(false)}
+      >
+        {selectedProduct && pendingStock !== null && (
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
+              <View style={styles.modalHandle} />
+
+              {/* Resumen de la diferencia */}
+              <View
+                style={[
+                  styles.difResumen,
+                  {
+                    backgroundColor:
+                      pendingStock < selectedProduct.stock_sistema
+                        ? `${C.danger}15`
+                        : `${C.warning}15`,
+                    borderColor:
+                      pendingStock < selectedProduct.stock_sistema
+                        ? `${C.danger}40`
+                        : `${C.warning}40`,
+                  },
+                ]}
+              >
+                <Feather
+                  name={pendingStock < selectedProduct.stock_sistema ? "trending-down" : "trending-up"}
+                  size={20}
+                  color={pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      color: pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning,
+                      fontFamily: "Inter_700Bold",
+                      fontSize: 15,
+                    }}
+                  >
+                    {pendingStock < selectedProduct.stock_sistema ? "Faltante" : "Sobrante"}{" "}
+                    de {Math.abs(pendingStock - selectedProduct.stock_sistema)} unidad
+                    {Math.abs(pendingStock - selectedProduct.stock_sistema) > 1 ? "es" : ""}
+                  </Text>
+                  <Text style={{ color: C.textSecondary, fontFamily: "Inter_400Regular", fontSize: 13 }}>
+                    {selectedProduct.nombre}
+                  </Text>
+                  <Text style={{ color: C.textMuted, fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 }}>
+                    Sistema: {selectedProduct.stock_sistema} · Físico: {pendingStock}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={[styles.inputLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                {pendingStock < selectedProduct.stock_sistema
+                  ? "¿POR QUÉ FALTA STOCK?"
+                  : "¿POR QUÉ HAY STOCK DE MÁS?"}
+              </Text>
+              <TextInput
+                value={comentarioInput}
+                onChangeText={setComentarioInput}
+                placeholder="Describe el motivo de la diferencia..."
+                placeholderTextColor={C.textMuted}
+                multiline
+                numberOfLines={4}
+                autoFocus
+                style={[
+                  styles.comentarioInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor:
+                      pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+              />
+
+              <View style={styles.modalBtns}>
+                <TouchableOpacity
+                  onPress={() => setShowComentarioModal(false)}
+                  style={[styles.btnSecondary, { borderColor: C.surfaceBorder }]}
+                >
+                  <Text style={[styles.btnSecondaryText, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                    Volver
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleConfirmarComentario}
+                  disabled={isSaving || !comentarioInput.trim()}
+                  style={[
+                    styles.btnPrimary,
+                    {
+                      backgroundColor: comentarioInput.trim()
+                        ? pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning
+                        : C.textMuted,
+                    },
+                  ]}
+                >
+                  <Feather name="check" size={18} color="#fff" />
+                  <Text style={[styles.btnPrimaryText, { fontFamily: "Inter_700Bold" }]}>
+                    {isSaving ? "Guardando..." : "Confirmar y guardar"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </Modal>
     </View>
   );
@@ -553,7 +634,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   imeiChipText: { flex: 1, fontSize: 13 },
-  comentarioSection: { gap: 8 },
+  difResumen: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
   comentarioInput: {
     borderWidth: 2,
     borderRadius: 10,
