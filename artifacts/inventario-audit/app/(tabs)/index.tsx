@@ -42,6 +42,8 @@ export default function InicioScreen() {
   const [auditorias, setAuditorias] = useState<Auditoria[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [nombreNueva, setNombreNueva] = useState("");
+  const [auditor1, setAuditor1] = useState("");
+  const [auditor2, setAuditor2] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
@@ -68,10 +70,12 @@ export default function InicioScreen() {
     }
     setIsCreating(true);
     try {
-      const id = await crearAuditoria(nombre);
+      const id = await crearAuditoria(nombre, auditor1, auditor2);
       await cargarAuditoria(id);
       setShowModal(false);
       setNombreNueva("");
+      setAuditor1("");
+      setAuditor2("");
       await cargar();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -352,6 +356,15 @@ export default function InicioScreen() {
                     </Text>
                   </View>
 
+                  {(aud.auditor1 || aud.auditor2) && (
+                    <View style={[styles.auditoresRow, { borderTopColor: C.surfaceBorder }]}>
+                      <Feather name="users" size={12} color={C.textMuted} />
+                      <Text style={[styles.auditoresText, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                        {[aud.auditor1, aud.auditor2].filter(Boolean).join(" · ")}
+                      </Text>
+                    </View>
+                  )}
+
                   <View style={styles.audStats}>
                     <View style={styles.audStat}>
                       <Text style={[styles.audStatVal, { color: C.text, fontFamily: "Inter_700Bold" }]}>
@@ -431,38 +444,93 @@ export default function InicioScreen() {
         visible={showModal}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowModal(false)}
+        onRequestClose={() => {
+          setShowModal(false);
+          setNombreNueva("");
+          setAuditor1("");
+          setAuditor2("");
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
             <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
-              Nueva auditoría
-            </Text>
-            <Text style={[styles.modalDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              Ingresa un nombre identificador para esta sesión de auditoría.
-            </Text>
-            <TextInput
-              value={nombreNueva}
-              onChangeText={setNombreNueva}
-              placeholder="Ej: Tienda Centro - Junio 2025"
-              placeholderTextColor={C.textMuted}
-              style={[
-                styles.modalInput,
-                {
-                  backgroundColor: C.surfaceElevated,
-                  borderColor: C.surfaceBorder,
-                  color: C.text,
-                  fontFamily: "Inter_400Regular",
-                },
-              ]}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleCrear}
-            />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: 12 }}
+            >
+              <Text style={[styles.modalTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                Nueva auditoría
+              </Text>
+              <Text style={[styles.modalDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                Ingresa un nombre para esta sesión y quién realizará el conteo.
+              </Text>
+              <TextInput
+                value={nombreNueva}
+                onChangeText={setNombreNueva}
+                placeholder="Ej: Tienda Centro - Junio 2025"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                autoFocus
+                returnKeyType="next"
+              />
+              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                AUDITOR 1
+              </Text>
+              <TextInput
+                value={auditor1}
+                onChangeText={setAuditor1}
+                placeholder="Nombre completo"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                returnKeyType="next"
+              />
+              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                AUDITOR 2{" "}
+                <Text style={{ color: C.textMuted, fontWeight: "400", fontSize: 11 }}>(opcional)</Text>
+              </Text>
+              <TextInput
+                value={auditor2}
+                onChangeText={setAuditor2}
+                placeholder="Nombre completo"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                returnKeyType="done"
+                onSubmitEditing={handleCrear}
+              />
+            </ScrollView>
             <View style={styles.modalBtns}>
               <TouchableOpacity
-                onPress={() => setShowModal(false)}
+                onPress={() => {
+                  setShowModal(false);
+                  setNombreNueva("");
+                  setAuditor1("");
+                  setAuditor2("");
+                }}
                 style={[styles.modalBtnSecondary, { borderColor: C.surfaceBorder }]}
               >
                 <Text style={[styles.modalBtnSecondaryText, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
@@ -705,6 +773,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 20 },
   modalDesc: { fontSize: 14, lineHeight: 20 },
+  auditorLabel: { fontSize: 11, letterSpacing: 0.7, marginBottom: -6 },
+  auditoresRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+  },
+  auditoresText: { fontSize: 13, flex: 1 },
   modalInput: {
     borderWidth: 1,
     borderRadius: 12,

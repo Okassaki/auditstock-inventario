@@ -30,6 +30,8 @@ export interface Auditoria {
   estado: "activa" | "completada";
   total_productos: number;
   total_contados: number;
+  auditor1: string | null;
+  auditor2: string | null;
 }
 
 export interface Inconsistencia {
@@ -101,7 +103,7 @@ interface DBContextValue {
   productos: ProductoInventario[];
   inconsistencias: Inconsistencia[];
   isLoading: boolean;
-  crearAuditoria: (nombre: string) => Promise<number>;
+  crearAuditoria: (nombre: string, auditor1?: string, auditor2?: string) => Promise<number>;
   cargarAuditorias: () => Promise<Auditoria[]>;
   cargarAuditoria: (id: number) => Promise<void>;
   importarProductos: (
@@ -163,7 +165,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
               fecha_modificacion TEXT NOT NULL,
               estado TEXT DEFAULT 'activa',
               total_productos INTEGER DEFAULT 0,
-              total_contados INTEGER DEFAULT 0
+              total_contados INTEGER DEFAULT 0,
+              auditor1 TEXT,
+              auditor2 TEXT
             );
             CREATE TABLE IF NOT EXISTS productos (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,13 +185,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             CREATE INDEX IF NOT EXISTS idx_productos_auditoria ON productos(auditoria_id);
             CREATE INDEX IF NOT EXISTS idx_productos_codigo ON productos(codigo);
           `);
-          // Migration: add comentario column to existing databases
-          try {
-            await dbRef.current.runAsync(
-              "ALTER TABLE productos ADD COLUMN comentario TEXT;"
-            );
-          } catch {
-            // Column already exists — ignore
+          // Migrations: add new columns to existing databases
+          for (const sql of [
+            "ALTER TABLE productos ADD COLUMN comentario TEXT;",
+            "ALTER TABLE auditorias ADD COLUMN auditor1 TEXT;",
+            "ALTER TABLE auditorias ADD COLUMN auditor2 TEXT;",
+          ]) {
+            try { await dbRef.current.runAsync(sql); } catch { /* already exists */ }
           }
         } else {
           // Fallback to AsyncStorage on native if SQLite fails
@@ -285,12 +289,14 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     setProductos(prods);
   }, [auditoriaActual, asGetProductosByAuditoria]);
 
-  const crearAuditoria = useCallback(async (nombre: string): Promise<number> => {
+  const crearAuditoria = useCallback(async (nombre: string, auditor1?: string, auditor2?: string): Promise<number> => {
     const now = new Date().toISOString();
+    const a1 = auditor1?.trim() || null;
+    const a2 = auditor2?.trim() || null;
     if (dbRef.current) {
       const result = await dbRef.current.runAsync(
-        "INSERT INTO auditorias (nombre, fecha_creacion, fecha_modificacion, estado) VALUES (?, ?, ?, 'activa')",
-        [nombre, now, now]
+        "INSERT INTO auditorias (nombre, fecha_creacion, fecha_modificacion, estado, auditor1, auditor2) VALUES (?, ?, ?, 'activa', ?, ?)",
+        [nombre, now, now, a1, a2]
       );
       return result.lastInsertRowId;
     } else {
@@ -303,6 +309,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         estado: "activa",
         total_productos: 0,
         total_contados: 0,
+        auditor1: a1,
+        auditor2: a2,
       };
       storeRef.current.auds.push(aud);
       await saveAuditorias(storeRef.current.auds);
