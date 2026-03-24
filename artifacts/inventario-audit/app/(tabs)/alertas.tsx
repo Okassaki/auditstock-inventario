@@ -206,52 +206,48 @@ export default function AlertasScreen() {
           Inconsistencias
         </Text>
 
-        <View style={styles.headerTop}>
-          <Text
-            style={[styles.headerSub, { color: C.textSecondary, fontFamily: "Inter_400Regular", flex: 1 }]}
-            numberOfLines={1}
-          >
-            {auditoriaActual.nombre}
-          </Text>
+        <Text
+          style={[styles.headerSub, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}
+          numberOfLines={1}
+        >
+          {auditoriaActual.nombre}
+        </Text>
 
-          <View style={styles.headerRight}>
-            {inconsistencias.length > 0 && (
-              <View style={[styles.countBadge, { backgroundColor: C.danger + "18" }]}>
-                <Text style={[styles.countBadgeText, { color: C.danger, fontFamily: "Inter_700Bold" }]}>
-                  {inconsistencias.length}
+        <View style={styles.summaryRow}>
+          {Object.entries(byTipo).map(([tipo, items]) => {
+            const config = TIPO_CONFIG[tipo] ?? TIPO_CONFIG.default;
+            const color = C[config.color as keyof typeof C] as string;
+            return (
+              <View key={tipo} style={[styles.summaryItem, { backgroundColor: `${color}12` }]}>
+                <Text style={[styles.summaryCount, { color, fontFamily: "Inter_700Bold" }]}>
+                  {items.length}
+                </Text>
+                <Text style={[styles.summaryLabel, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                  {tipo}
                 </Text>
               </View>
-            )}
-            <TouchableOpacity
-              onPress={handleCompartir}
-              style={[styles.shareBtn, { backgroundColor: C.primary + "18", borderColor: C.primary + "30" }]}
-            >
-              <Feather name="share-2" size={18} color={C.primary} />
-              <Text style={[styles.shareBtnText, { color: C.primary, fontFamily: "Inter_600SemiBold" }]}>
-                Exportar
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+            );
+          })}
 
-        {Object.keys(byTipo).length > 0 && (
-          <View style={styles.summaryRow}>
-            {Object.entries(byTipo).map(([tipo, items]) => {
-              const config = TIPO_CONFIG[tipo] ?? TIPO_CONFIG.default;
-              const color = C[config.color as keyof typeof C] as string;
-              return (
-                <View key={tipo} style={[styles.summaryItem, { backgroundColor: `${color}12` }]}>
-                  <Text style={[styles.summaryCount, { color, fontFamily: "Inter_700Bold" }]}>
-                    {items.length}
-                  </Text>
-                  <Text style={[styles.summaryLabel, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                    {tipo}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
+          <View style={{ flex: 1 }} />
+
+          {inconsistencias.length > 0 && (
+            <View style={[styles.countBadge, { backgroundColor: C.danger + "18" }]}>
+              <Text style={[styles.countBadgeText, { color: C.danger, fontFamily: "Inter_700Bold" }]}>
+                {inconsistencias.length}
+              </Text>
+            </View>
+          )}
+          <TouchableOpacity
+            onPress={handleCompartir}
+            style={[styles.shareBtn, { backgroundColor: C.primary + "18", borderColor: C.primary + "30" }]}
+          >
+            <Feather name="share-2" size={18} color={C.primary} />
+            <Text style={[styles.shareBtnText, { color: C.primary, fontFamily: "Inter_600SemiBold" }]}>
+              Exportar
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {inconsistencias.length === 0 ? (
@@ -313,18 +309,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     gap: 12,
   },
-  headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flexShrink: 0,
-  },
   headerTitle: { fontSize: 24 },
   headerSub: { fontSize: 13, marginTop: 2 },
   countBadge: {
@@ -345,7 +329,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   shareBtnText: { fontSize: 13 },
-  summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  summaryRow: { flexDirection: "row", flexWrap: "nowrap", alignItems: "center", gap: 8 },
   summaryItem: {
     flexDirection: "row",
     alignItems: "center",
