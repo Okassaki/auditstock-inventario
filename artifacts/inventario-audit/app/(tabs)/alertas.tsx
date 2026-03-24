@@ -204,7 +204,11 @@ export default function AlertasScreen() {
       >
         <View style={styles.headerTop}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.headerTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+            <Text
+              style={[styles.headerTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
               Inconsistencias
             </Text>
             <Text style={[styles.headerSub, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
