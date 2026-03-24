@@ -16,8 +16,10 @@ const TIPO_CONFIG: Record<
   string,
   { color: keyof typeof Colors.dark; icon: string; iconLib: "feather" | "mci" }
 > = {
+  Faltante: { color: "danger", icon: "trending-down", iconLib: "feather" },
+  Sobrante: { color: "warning", icon: "trending-up", iconLib: "feather" },
   "IMEI Duplicado": { color: "danger", icon: "cpu", iconLib: "feather" },
-  Negativo: { color: "danger", icon: "trending-down", iconLib: "feather" },
+  Negativo: { color: "danger", icon: "minus-circle", iconLib: "feather" },
   "Sistema Negativo": { color: "warning", icon: "alert-triangle", iconLib: "feather" },
   default: { color: "warning", icon: "alert-circle", iconLib: "feather" },
 };
@@ -168,9 +170,10 @@ export default function AlertasScreen() {
           </Text>
           <View style={styles.checkList}>
             {[
+              "Sin faltantes de stock",
+              "Sin sobrantes de stock",
               "Sin IMEIs duplicados",
               "Sin stocks negativos",
-              "Sin equipos en conflicto",
             ].map((item) => (
               <View key={item} style={styles.checkItem}>
                 <View style={[styles.checkDot, { backgroundColor: C.success }]} />

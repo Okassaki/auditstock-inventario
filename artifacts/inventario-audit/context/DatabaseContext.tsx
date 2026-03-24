@@ -557,12 +557,39 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     const imeiMap = new Map<string, ProductoInventario[]>();
 
     for (const prod of productos) {
+      // Faltante: se contó menos de lo que indica el sistema
+      if (prod.stock_fisico !== null && prod.stock_fisico < prod.stock_sistema) {
+        const diff = prod.stock_sistema - prod.stock_fisico;
+        result.push({
+          tipo: "Faltante",
+          descripcion: `Faltan ${diff} unidad${diff > 1 ? "es" : ""}. Sistema: ${prod.stock_sistema} · Físico: ${prod.stock_fisico}${prod.comentario ? ` · Motivo: ${prod.comentario}` : ""}`,
+          codigo: prod.codigo,
+          nombre: prod.nombre,
+        });
+      }
+
+      // Sobrante: se contó más de lo que indica el sistema
+      if (prod.stock_fisico !== null && prod.stock_fisico > prod.stock_sistema) {
+        const diff = prod.stock_fisico - prod.stock_sistema;
+        result.push({
+          tipo: "Sobrante",
+          descripcion: `Sobran ${diff} unidad${diff > 1 ? "es" : ""}. Sistema: ${prod.stock_sistema} · Físico: ${prod.stock_fisico}${prod.comentario ? ` · Motivo: ${prod.comentario}` : ""}`,
+          codigo: prod.codigo,
+          nombre: prod.nombre,
+        });
+      }
+
+      // Stock físico negativo
       if (prod.stock_fisico !== null && prod.stock_fisico < 0) {
         result.push({ tipo: "Negativo", descripcion: `Stock físico negativo: ${prod.stock_fisico}`, codigo: prod.codigo, nombre: prod.nombre });
       }
+
+      // Stock sistema negativo
       if (prod.stock_sistema < 0) {
         result.push({ tipo: "Sistema Negativo", descripcion: `Stock en sistema negativo: ${prod.stock_sistema}`, codigo: prod.codigo, nombre: prod.nombre });
       }
+
+      // IMEI duplicados
       const imeis = [
         ...(prod.imeis_sistema?.split(",").map((i) => i.trim()).filter(Boolean) ?? []),
         ...(prod.imeis_fisicos?.split(",").map((i) => i.trim()).filter(Boolean) ?? []),
