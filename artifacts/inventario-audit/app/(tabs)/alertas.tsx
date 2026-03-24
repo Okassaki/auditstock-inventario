@@ -202,19 +202,17 @@ export default function AlertasScreen() {
           },
         ]}
       >
+        <Text style={[styles.headerTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+          Inconsistencias
+        </Text>
+
         <View style={styles.headerTop}>
-          <View style={{ flex: 1 }}>
-            <Text
-              style={[styles.headerTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-            >
-              Inconsistencias
-            </Text>
-            <Text style={[styles.headerSub, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              {auditoriaActual.nombre}
-            </Text>
-          </View>
+          <Text
+            style={[styles.headerSub, { color: C.textSecondary, fontFamily: "Inter_400Regular", flex: 1 }]}
+            numberOfLines={1}
+          >
+            {auditoriaActual.nombre}
+          </Text>
 
           <View style={styles.headerRight}>
             {inconsistencias.length > 0 && (
