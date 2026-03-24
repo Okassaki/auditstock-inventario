@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -21,6 +22,8 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+const isWeb = Platform.OS === "web";
+
 function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerBackTitle: "Atrás" }}>
@@ -30,20 +33,29 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
+  // On web, skip font loading to avoid fontfaceobserver network timeout.
+  // Fonts are bundled locally in the APK so the timeout never occurs there.
+  const [fontsLoaded, fontError] = useFonts(
+    isWeb
+      ? {}
+      : {
+          Inter_400Regular,
+          Inter_500Medium,
+          Inter_600SemiBold,
+          Inter_700Bold,
+        }
+  );
+
+  // On web, consider fonts ready immediately.
+  const ready = isWeb || fontsLoaded || !!fontError;
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    if (ready) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [ready]);
 
-  if (!fontsLoaded && !fontError) return null;
+  if (!ready) return null;
 
   return (
     <SafeAreaProvider>
