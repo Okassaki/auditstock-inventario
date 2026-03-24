@@ -1,10 +1,13 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import {
+  Alert,
   FlatList,
   Platform,
+  Share,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -70,6 +73,76 @@ function InconsistenciaCard({
   );
 }
 
+function formatFecha(iso: string) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("es-MX", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function generarResumen(
+  auditoriaActual: NonNullable<ReturnType<typeof useDatabase>["auditoriaActual"]>,
+  inconsistencias: Inconsistencia[],
+  byTipo: Record<string, Inconsistencia[]>
+): string {
+  const lineas: string[] = [];
+
+  lineas.push("══════════════════════════════");
+  lineas.push("   REPORTE DE INCONSISTENCIAS");
+  lineas.push("══════════════════════════════");
+  lineas.push("");
+  lineas.push(`Auditoría : ${auditoriaActual.nombre}`);
+  lineas.push(`Fecha     : ${formatFecha(auditoriaActual.fecha_modificacion)}`);
+
+  const auditores = [auditoriaActual.auditor1, auditoriaActual.auditor2]
+    .filter(Boolean)
+    .join(" · ");
+  if (auditores) lineas.push(`Auditores : ${auditores}`);
+
+  lineas.push("");
+  lineas.push("─── RESUMEN ───────────────────");
+
+  if (inconsistencias.length === 0) {
+    lineas.push("✓ Sin inconsistencias detectadas.");
+  } else {
+    lineas.push(`Total de inconsistencias: ${inconsistencias.length}`);
+    for (const [tipo, items] of Object.entries(byTipo)) {
+      const emoji =
+        tipo === "Faltante" ? "📉" :
+        tipo === "Sobrante" ? "📈" :
+        tipo === "IMEI Duplicado" ? "🔁" :
+        tipo === "Negativo" ? "❌" : "⚠️";
+      lineas.push(`  ${emoji} ${tipo}: ${items.length}`);
+    }
+  }
+
+  if (inconsistencias.length > 0) {
+    for (const [tipo, items] of Object.entries(byTipo)) {
+      lineas.push("");
+      lineas.push(`─── ${tipo.toUpperCase()} (${items.length}) ───────────`);
+      items.forEach((item, idx) => {
+        lineas.push(`${idx + 1}. ${item.nombre}`);
+        lineas.push(`   Código : ${item.codigo}`);
+        lineas.push(`   Detalle: ${item.descripcion}`);
+      });
+    }
+  }
+
+  lineas.push("");
+  lineas.push("══════════════════════════════");
+  lineas.push(`Generado con AuditStock`);
+
+  return lineas.join("\n");
+}
+
 export default function AlertasScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -90,6 +163,16 @@ export default function AlertasScreen() {
   const isWeb = Platform.OS === "web";
   const topPad = isWeb ? 67 : insets.top;
   const botPad = isWeb ? 34 : insets.bottom;
+
+  const handleCompartir = async () => {
+    if (!auditoriaActual) return;
+    const texto = generarResumen(auditoriaActual, inconsistencias, byTipo);
+    try {
+      await Share.share({ message: texto, title: "Reporte de inconsistencias" });
+    } catch (e) {
+      Alert.alert("Error", "No se pudo abrir el menú de compartir.");
+    }
+  };
 
   if (!auditoriaActual) {
     return (
@@ -120,7 +203,7 @@ export default function AlertasScreen() {
         ]}
       >
         <View style={styles.headerTop}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={[styles.headerTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
               Inconsistencias
             </Text>
@@ -128,13 +211,25 @@ export default function AlertasScreen() {
               {auditoriaActual.nombre}
             </Text>
           </View>
-          {inconsistencias.length > 0 && (
-            <View style={[styles.countBadge, { backgroundColor: C.danger + "18" }]}>
-              <Text style={[styles.countBadgeText, { color: C.danger, fontFamily: "Inter_700Bold" }]}>
-                {inconsistencias.length}
+
+          <View style={styles.headerRight}>
+            {inconsistencias.length > 0 && (
+              <View style={[styles.countBadge, { backgroundColor: C.danger + "18" }]}>
+                <Text style={[styles.countBadgeText, { color: C.danger, fontFamily: "Inter_700Bold" }]}>
+                  {inconsistencias.length}
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              onPress={handleCompartir}
+              style={[styles.shareBtn, { backgroundColor: C.primary + "18", borderColor: C.primary + "30" }]}
+            >
+              <Feather name="share-2" size={18} color={C.primary} />
+              <Text style={[styles.shareBtnText, { color: C.primary, fontFamily: "Inter_600SemiBold" }]}>
+                Exportar
               </Text>
-            </View>
-          )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {Object.keys(byTipo).length > 0 && (
@@ -220,17 +315,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    gap: 12,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0,
   },
   headerTitle: { fontSize: 24 },
   headerSub: { fontSize: 13, marginTop: 2 },
   countBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
-  countBadgeText: { fontSize: 18 },
+  countBadgeText: { fontSize: 16 },
+  shareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  shareBtnText: { fontSize: 13 },
   summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   summaryItem: {
     flexDirection: "row",
