@@ -43,8 +43,6 @@ export default function InicioScreen() {
   const [auditorias, setAuditorias] = useState<Auditoria[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [nombreNueva, setNombreNueva] = useState("");
-  const [auditor1, setAuditor1] = useState("");
-  const [auditor2, setAuditor2] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
   // Modal de activación (pedir auditores al seleccionar una auditoría existente)
@@ -77,12 +75,10 @@ export default function InicioScreen() {
     }
     setIsCreating(true);
     try {
-      const id = await crearAuditoria(nombre, auditor1, auditor2);
+      const id = await crearAuditoria(nombre);
       await cargarAuditoria(id);
       setShowModal(false);
       setNombreNueva("");
-      setAuditor1("");
-      setAuditor2("");
       await cargar();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -482,8 +478,6 @@ export default function InicioScreen() {
         onRequestClose={() => {
           setShowModal(false);
           setNombreNueva("");
-          setAuditor1("");
-          setAuditor2("");
         }}
       >
         <View style={styles.modalOverlay}>
@@ -498,7 +492,7 @@ export default function InicioScreen() {
                 Nueva auditoría
               </Text>
               <Text style={[styles.modalDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                Ingresa un nombre para esta sesión y quién realizará el conteo.
+                Ingresa un nombre identificador para esta sesión de auditoría.
               </Text>
               <TextInput
                 value={nombreNueva}
@@ -515,45 +509,6 @@ export default function InicioScreen() {
                   },
                 ]}
                 autoFocus
-                returnKeyType="next"
-              />
-              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
-                AUDITOR 1
-              </Text>
-              <TextInput
-                value={auditor1}
-                onChangeText={setAuditor1}
-                placeholder="Nombre completo"
-                placeholderTextColor={C.textMuted}
-                style={[
-                  styles.modalInput,
-                  {
-                    backgroundColor: C.surfaceElevated,
-                    borderColor: C.surfaceBorder,
-                    color: C.text,
-                    fontFamily: "Inter_400Regular",
-                  },
-                ]}
-                returnKeyType="next"
-              />
-              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
-                AUDITOR 2{" "}
-                <Text style={{ color: C.textMuted, fontWeight: "400", fontSize: 11 }}>(opcional)</Text>
-              </Text>
-              <TextInput
-                value={auditor2}
-                onChangeText={setAuditor2}
-                placeholder="Nombre completo"
-                placeholderTextColor={C.textMuted}
-                style={[
-                  styles.modalInput,
-                  {
-                    backgroundColor: C.surfaceElevated,
-                    borderColor: C.surfaceBorder,
-                    color: C.text,
-                    fontFamily: "Inter_400Regular",
-                  },
-                ]}
                 returnKeyType="done"
                 onSubmitEditing={handleCrear}
               />
@@ -563,8 +518,6 @@ export default function InicioScreen() {
                 onPress={() => {
                   setShowModal(false);
                   setNombreNueva("");
-                  setAuditor1("");
-                  setAuditor2("");
                 }}
                 style={[styles.modalBtnSecondary, { borderColor: C.surfaceBorder }]}
               >
