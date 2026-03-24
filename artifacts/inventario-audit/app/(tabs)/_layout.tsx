@@ -9,7 +9,7 @@ import {
 import { SymbolView } from "expo-symbols";
 import { MaterialCommunityIcons, Feather, Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { Colors } from "@/constants/colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 
@@ -44,6 +44,7 @@ function ClassicTabLayout() {
   const isWeb = Platform.OS === "web";
 
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: C.primary,
@@ -122,6 +123,8 @@ function ClassicTabLayout() {
         }}
       />
     </Tabs>
+      <Text style={styles.firma}>Daniel E. Sanchez A.</Text>
+    </View>
   );
 }
 
@@ -131,3 +134,15 @@ export default function TabLayout() {
   }
   return <ClassicTabLayout />;
 }
+
+const styles = StyleSheet.create({
+  firma: {
+    position: "absolute",
+    bottom: 10,
+    right: 14,
+    fontSize: 9,
+    color: "rgba(255,255,255,0.25)",
+    fontFamily: "Inter_400Regular",
+    letterSpacing: 0.3,
+  },
+});
