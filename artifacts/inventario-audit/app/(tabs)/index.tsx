@@ -35,6 +35,7 @@ export default function InicioScreen() {
     cargarAuditoria,
     auditoriaActual,
     eliminarAuditoria,
+    archivarAuditoria,
     limpiarAuditoriaActual,
     importarProductos,
     actualizarAuditores,
@@ -44,6 +45,8 @@ export default function InicioScreen() {
   const [showModal, setShowModal] = useState(false);
   const [nombreNueva, setNombreNueva] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [showArchivadas, setShowArchivadas] = useState(false);
+  const [auditoriaAArchivar, setAuditoriaAArchivar] = useState<Auditoria | null>(null);
 
   // Modal de activación (pedir auditores al seleccionar una auditoría existente)
   const [auditoriaParaActivar, setAuditoriaParaActivar] = useState<Auditoria | null>(null);
@@ -185,6 +188,11 @@ export default function InicioScreen() {
 
   const handleSeleccionar = async (aud: Auditoria) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Las archivadas se cargan en modo solo lectura
+    if (aud.estado === "archivada") {
+      await cargarAuditoria(aud.id);
+      return;
+    }
     // Si ya tiene auditores registrados, activa directamente sin preguntar
     if (aud.auditor1) {
       await cargarAuditoria(aud.id);
@@ -218,6 +226,19 @@ export default function InicioScreen() {
 
   const handleEliminar = (aud: Auditoria) => {
     setAuditoriaAEliminar(aud);
+  };
+
+  const confirmarArchivar = async () => {
+    if (!auditoriaAArchivar) return;
+    const id = auditoriaAArchivar.id;
+    setAuditoriaAArchivar(null);
+    try {
+      await archivarAuditoria(id);
+      await cargar();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert("Error", String(e));
+    }
   };
 
   const confirmarEliminar = async () => {
@@ -324,28 +345,13 @@ export default function InicioScreen() {
           </Text>
         </View>
 
-        {auditorias.length === 0 ? (
-          <View style={styles.empty}>
-            <MaterialCommunityIcons name="clipboard-text-outline" size={56} color={C.textMuted} />
-            <Text style={[styles.emptyTitle, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
-              Sin auditorías
-            </Text>
-            <Text style={[styles.emptyDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              Crea tu primera auditoría para comenzar
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowModal(true)}
-              style={[styles.emptyBtn, { backgroundColor: C.primary }]}
-            >
-              <Feather name="plus" size={16} color="#fff" />
-              <Text style={[styles.emptyBtnText, { fontFamily: "Inter_600SemiBold" }]}>
-                Nueva auditoría
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          auditorias.map((aud) => {
+        {(() => {
+          const activas = auditorias.filter((a) => a.estado !== "archivada");
+          const archivadas = auditorias.filter((a) => a.estado === "archivada");
+
+          const renderCard = (aud: Auditoria) => {
             const isActiva = auditoriaActual?.id === aud.id;
+            const isArchivada = aud.estado === "archivada";
             const prog =
               aud.total_productos > 0
                 ? Math.round((aud.total_contados / aud.total_productos) * 100)
@@ -359,6 +365,7 @@ export default function InicioScreen() {
                     backgroundColor: C.surface,
                     borderColor: isActiva ? C.primary : C.surfaceBorder,
                     borderWidth: isActiva ? 1.5 : 1,
+                    opacity: isArchivada ? 0.75 : 1,
                   },
                 ]}
               >
@@ -434,16 +441,30 @@ export default function InicioScreen() {
                 </TouchableOpacity>
 
                 <View style={[styles.audActions, { borderTopColor: C.surfaceBorder }]}>
-                  <TouchableOpacity
-                    onPress={() => handleImportar(aud.id)}
-                    style={styles.audAction}
-                  >
-                    <Feather name="upload" size={16} color={C.primary} />
-                    <Text style={[styles.audActionText, { color: C.primary, fontFamily: "Inter_500Medium" }]}>
-                      Importar Excel
-                    </Text>
-                  </TouchableOpacity>
-                  <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
+                  {!isArchivada && (
+                    <>
+                      <TouchableOpacity
+                        onPress={() => handleImportar(aud.id)}
+                        style={styles.audAction}
+                      >
+                        <Feather name="upload" size={16} color={C.primary} />
+                        <Text style={[styles.audActionText, { color: C.primary, fontFamily: "Inter_500Medium" }]}>
+                          Importar Excel
+                        </Text>
+                      </TouchableOpacity>
+                      <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
+                      <TouchableOpacity
+                        onPress={() => setAuditoriaAArchivar(aud)}
+                        style={styles.audAction}
+                      >
+                        <Feather name="archive" size={16} color={C.warning} />
+                        <Text style={[styles.audActionText, { color: C.warning, fontFamily: "Inter_500Medium" }]}>
+                          Archivar
+                        </Text>
+                      </TouchableOpacity>
+                      <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
+                    </>
+                  )}
                   <TouchableOpacity
                     onPress={() => handleEliminar(aud)}
                     style={styles.audAction}
@@ -456,8 +477,57 @@ export default function InicioScreen() {
                 </View>
               </View>
             );
-          })
-        )}
+          };
+
+          if (auditorias.length === 0) {
+            return (
+              <View style={styles.empty}>
+                <MaterialCommunityIcons name="clipboard-text-outline" size={56} color={C.textMuted} />
+                <Text style={[styles.emptyTitle, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  Sin auditorías
+                </Text>
+                <Text style={[styles.emptyDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                  Crea tu primera auditoría para comenzar
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowModal(true)}
+                  style={[styles.emptyBtn, { backgroundColor: C.primary }]}
+                >
+                  <Feather name="plus" size={16} color="#fff" />
+                  <Text style={[styles.emptyBtnText, { fontFamily: "Inter_600SemiBold" }]}>
+                    Nueva auditoría
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          return (
+            <>
+              {activas.map(renderCard)}
+              {archivadas.length > 0 && (
+                <>
+                  <TouchableOpacity
+                    onPress={() => setShowArchivadas(!showArchivadas)}
+                    style={[styles.archivadasHeader, { borderColor: C.surfaceBorder }]}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="archive" size={14} color={C.textSecondary} />
+                    <Text style={[styles.archivadasTitle, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                      Archivadas ({archivadas.length})
+                    </Text>
+                    <Feather
+                      name={showArchivadas ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={C.textMuted}
+                    />
+                  </TouchableOpacity>
+                  {showArchivadas && archivadas.map(renderCard)}
+                </>
+              )}
+            </>
+          );
+        })()}
       </ScrollView>
 
       {isImporting && (
@@ -679,6 +749,47 @@ export default function InicioScreen() {
               >
                 <Text style={[styles.confirmBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
                   OK
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal confirmación archivar */}
+      <Modal
+        visible={!!auditoriaAArchivar}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAuditoriaAArchivar(null)}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
+          <View style={[styles.confirmBox, { backgroundColor: C.surface }]}>
+            <Feather name="archive" size={32} color={C.warning} style={{ marginBottom: 12 }} />
+            <Text style={[styles.confirmTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+              Archivar auditoría
+            </Text>
+            <Text style={[styles.confirmDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+              <Text style={{ fontFamily: "Inter_600SemiBold", color: C.text }}>
+                "{auditoriaAArchivar?.nombre}"
+              </Text>
+              {" "}quedará archivada y no se podrá editar. Solo podrás consultarla y exportarla. Esta acción no se puede deshacer.
+            </Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: C.surfaceBorder }]}
+                onPress={() => setAuditoriaAArchivar(null)}
+              >
+                <Text style={[styles.confirmBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: C.warning }]}
+                onPress={confirmarArchivar}
+              >
+                <Text style={[styles.confirmBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
+                  Confirmar y archivar
                 </Text>
               </TouchableOpacity>
             </View>
@@ -924,4 +1035,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   confirmBtnText: { fontSize: 15 },
+  archivadasHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    marginTop: 4,
+    marginBottom: 4,
+    borderTopWidth: 1,
+  },
+  archivadasTitle: { flex: 1, fontSize: 13, letterSpacing: 0.3 },
 });

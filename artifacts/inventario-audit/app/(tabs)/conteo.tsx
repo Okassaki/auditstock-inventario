@@ -156,6 +156,22 @@ export default function ConteoScreen() {
     );
   }
 
+  if (auditoriaActual.estado === "archivada") {
+    return (
+      <View style={[styles.container, { backgroundColor: C.background }]}>
+        <View style={[styles.emptyState, { paddingTop: topPad + 40 }]}>
+          <Feather name="archive" size={64} color={C.textMuted} />
+          <Text style={[styles.emptyTitle, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+            Auditoría archivada
+          </Text>
+          <Text style={[styles.emptyDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+            Esta auditoría está archivada y no se puede editar. Puedes consultar los resultados en las pestañas Resumen y Alertas.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
       <View

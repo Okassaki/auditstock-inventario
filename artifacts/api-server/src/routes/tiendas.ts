@@ -1,0 +1,136 @@
+import { Router, type IRouter } from "express";
+import { db, tiendasTable, progresoAuditoriasTable, insertTiendaSchema } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
+import { z } from "zod";
+
+const router: IRouter = Router();
+
+router.post("/tiendas", async (req, res) => {
+  try {
+    const body = insertTiendaSchema.parse(req.body);
+    const existing = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, body.codigo)).limit(1);
+    if (existing.length > 0) {
+      res.status(409).json({ error: "Ya existe una tienda con ese código" });
+      return;
+    }
+    const [tienda] = await db.insert(tiendasTable).values(body).returning();
+    res.status(201).json(tienda);
+  } catch (err: any) {
+    if (err?.name === "ZodError") {
+      res.status(400).json({ error: "Datos inválidos", detalles: err.issues });
+      return;
+    }
+    res.status(500).json({ error: "Error al crear tienda" });
+  }
+});
+
+router.get("/tiendas", async (_req, res) => {
+  try {
+    const tiendas = await db.select().from(tiendasTable).orderBy(tiendasTable.nombre);
+    res.json(tiendas);
+  } catch {
+    res.status(500).json({ error: "Error al obtener tiendas" });
+  }
+});
+
+router.get("/tiendas/:codigo", async (req, res) => {
+  try {
+    const [tienda] = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo)).limit(1);
+    if (!tienda) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    res.json(tienda);
+  } catch {
+    res.status(500).json({ error: "Error al obtener tienda" });
+  }
+});
+
+const progresoSchema = z.object({
+  auditoriaId: z.string(),
+  auditoriaNombre: z.string(),
+  totalProductos: z.number().int().min(0),
+  totalContados: z.number().int().min(0),
+  estado: z.enum(["activa", "completada", "archivada"]).default("activa"),
+});
+
+router.post("/tiendas/:codigo/progreso", async (req, res) => {
+  try {
+    const [tienda] = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo)).limit(1);
+    if (!tienda) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    const body = progresoSchema.parse(req.body);
+    const existing = await db.select().from(progresoAuditoriasTable)
+      .where(eq(progresoAuditoriasTable.auditoriaId, body.auditoriaId))
+      .limit(1);
+    if (existing.length > 0) {
+      const [updated] = await db.update(progresoAuditoriasTable)
+        .set({
+          totalProductos: body.totalProductos,
+          totalContados: body.totalContados,
+          estado: body.estado,
+          actualizadoAt: new Date(),
+        })
+        .where(eq(progresoAuditoriasTable.auditoriaId, body.auditoriaId))
+        .returning();
+      res.json(updated);
+    } else {
+      const [created] = await db.insert(progresoAuditoriasTable).values({
+        tiendaCodigo: req.params.codigo,
+        auditoriaId: body.auditoriaId,
+        auditoriaNombre: body.auditoriaNombre,
+        totalProductos: body.totalProductos,
+        totalContados: body.totalContados,
+        estado: body.estado,
+      }).returning();
+      res.status(201).json(created);
+    }
+  } catch (err: any) {
+    if (err?.name === "ZodError") {
+      res.status(400).json({ error: "Datos inválidos", detalles: err.issues });
+      return;
+    }
+    res.status(500).json({ error: "Error al reportar progreso" });
+  }
+});
+
+router.get("/tiendas/:codigo/progreso", async (req, res) => {
+  try {
+    const [tienda] = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo)).limit(1);
+    if (!tienda) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    const progresos = await db.select().from(progresoAuditoriasTable)
+      .where(eq(progresoAuditoriasTable.tiendaCodigo, req.params.codigo))
+      .orderBy(desc(progresoAuditoriasTable.actualizadoAt));
+    res.json(progresos);
+  } catch {
+    res.status(500).json({ error: "Error al obtener progreso" });
+  }
+});
+
+router.get("/progreso", async (_req, res) => {
+  try {
+    const tiendas = await db.select().from(tiendasTable).orderBy(tiendasTable.nombre);
+    const progresos = await db.select().from(progresoAuditoriasTable)
+      .orderBy(desc(progresoAuditoriasTable.actualizadoAt));
+
+    const resultado = tiendas.map((t) => {
+      const progresostienda = progresos.filter((p) => p.tiendaCodigo === t.codigo);
+      const activa = progresostienda.find((p) => p.estado === "activa");
+      return {
+        tienda: t,
+        progresoActivo: activa ?? null,
+        totalAuditorias: progresostienda.length,
+      };
+    });
+    res.json(resultado);
+  } catch {
+    res.status(500).json({ error: "Error al obtener progreso general" });
+  }
+});
+
+export default router;

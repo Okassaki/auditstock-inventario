@@ -7,7 +7,7 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseContext";
+import { StoreConfigProvider, useStoreConfig } from "@/context/StoreConfigContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -25,16 +26,29 @@ const queryClient = new QueryClient();
 const isWeb = Platform.OS === "web";
 
 function RootLayoutNav() {
+  const { storeConfig, isLoading } = useStoreConfig();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) return;
+    const inSetup = segments[0] === "setup";
+    if (!storeConfig && !inSetup) {
+      router.replace("/setup");
+    } else if (storeConfig && inSetup) {
+      router.replace("/(tabs)");
+    }
+  }, [storeConfig, isLoading, segments]);
+
   return (
     <Stack screenOptions={{ headerBackTitle: "Atrás" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="setup" options={{ headerShown: false }} />
     </Stack>
   );
 }
 
 export default function RootLayout() {
-  // On web, skip font loading to avoid fontfaceobserver network timeout.
-  // Fonts are bundled locally in the APK so the timeout never occurs there.
   const [fontsLoaded, fontError] = useFonts(
     isWeb
       ? {}
@@ -46,7 +60,6 @@ export default function RootLayout() {
         }
   );
 
-  // On web, consider fonts ready immediately.
   const ready = isWeb || fontsLoaded || !!fontError;
 
   useEffect(() => {
@@ -61,13 +74,15 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <DatabaseProvider>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
-            </GestureHandlerRootView>
-          </DatabaseProvider>
+          <StoreConfigProvider>
+            <DatabaseProvider>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <KeyboardProvider>
+                  <RootLayoutNav />
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </DatabaseProvider>
+          </StoreConfigProvider>
         </QueryClientProvider>
       </ErrorBoundary>
     </SafeAreaProvider>

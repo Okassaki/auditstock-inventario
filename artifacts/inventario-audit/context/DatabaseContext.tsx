@@ -27,7 +27,7 @@ export interface Auditoria {
   nombre: string;
   fecha_creacion: string;
   fecha_modificacion: string;
-  estado: "activa" | "completada";
+  estado: "activa" | "completada" | "archivada";
   total_productos: number;
   total_contados: number;
   auditor1: string | null;
@@ -119,6 +119,7 @@ interface DBContextValue {
   ) => Promise<void>;
   actualizarAuditores: (id: number, auditor1: string, auditor2: string) => Promise<void>;
   eliminarAuditoria: (id: number) => Promise<void>;
+  archivarAuditoria: (id: number) => Promise<void>;
   limpiarAuditoriaActual: () => void;
   detectarInconsistencias: () => Inconsistencia[];
   refreshProductos: () => Promise<void>;
@@ -545,7 +546,24 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Limpia el estado React cuando se elimina la auditoría activa
+  const archivarAuditoria = useCallback(async (id: number) => {
+    const now = new Date().toISOString();
+    if (dbRef.current) {
+      await dbRef.current.runAsync(
+        "UPDATE auditorias SET estado = 'archivada', fecha_modificacion = ? WHERE id = ?",
+        [now, id]
+      );
+    } else {
+      storeRef.current.auds = storeRef.current.auds.map((a) =>
+        a.id === id ? { ...a, estado: "archivada" as const, fecha_modificacion: now } : a
+      );
+      await saveAuditorias(storeRef.current.auds);
+    }
+    setAuditoriaActual((prev) =>
+      prev?.id === id ? { ...prev, estado: "archivada" } : prev
+    );
+  }, []);
+
   const limpiarAuditoriaActual = useCallback(() => {
     setAuditoriaActual(null);
     setProductos([]);
@@ -635,6 +653,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         actualizarConteo,
         actualizarAuditores,
         eliminarAuditoria,
+        archivarAuditoria,
         limpiarAuditoriaActual,
         detectarInconsistencias,
         refreshProductos,
