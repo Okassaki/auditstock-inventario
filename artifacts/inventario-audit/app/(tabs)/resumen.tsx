@@ -1,21 +1,18 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { captureRef } from "react-native-view-shot";
-import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import {
@@ -26,12 +23,12 @@ import {
 } from "@/context/DatabaseContext";
 import { Badge } from "@/components/ui/Badge";
 import { exportarExcel } from "@/utils/excel";
-import { exportarPDF, getProductosFiltrados } from "@/utils/exportReport";
+import { exportarPDF } from "@/utils/exportReport";
 import { useColorScheme } from "@/hooks/useColorScheme";
 
 type Tab = "faltantes" | "sobrantes" | "correctos" | "sin_contar";
 type Filtro = "todos" | "faltantes" | "sobrantes";
-type Formato = "excel" | "pdf" | "imagen";
+type Formato = "excel" | "pdf";
 
 interface ResumenItem {
   producto: ProductoInventario;
@@ -42,7 +39,6 @@ interface ResumenItem {
 const FORMATOS: { key: Formato; icon: string; label: string; desc: string; color: string }[] = [
   { key: "excel", icon: "grid", label: "Excel", desc: "Compatible con PC y celular", color: "#22c55e" },
   { key: "pdf", icon: "file-text", label: "PDF", desc: "Ideal para imprimir y compartir", color: "#3b82f6" },
-  { key: "imagen", icon: "image", label: "Imagen", desc: "Para enviar rápido por WhatsApp", color: "#a855f7" },
 ];
 
 export default function ResumenScreen() {
@@ -56,12 +52,7 @@ export default function ResumenScreen() {
   const [exporting, setExporting] = useState(false);
 
   const [formatModal, setFormatModal] = useState(false);
-  const [pendingFiltro, setPendingFiltro] = useState<Filtro | null>(null);
-
-  const [capturandoImagen, setCapturandoImagen] = useState(false);
-  const [imagenLista, setImagenLista] = useState(false);
-  const reporteImagenRef = useRef<View>(null);
-  const pendingFiltroRef = useRef<Filtro>("todos");
+  const [pendingFiltro, setPendingFiltro] = useState<Filtro>("todos");
 
   const resumen = useMemo(() => {
     const faltantes: ResumenItem[] = [];
@@ -93,27 +84,19 @@ export default function ResumenScreen() {
 
   const abrirSelectorFormato = (filtro: Filtro) => {
     setPendingFiltro(filtro);
-    pendingFiltroRef.current = filtro;
     setFormatModal(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const handleExportar = async (formato: Formato) => {
-    const filtro = pendingFiltroRef.current;
     setFormatModal(false);
-
-    if (formato === "imagen") {
-      setCapturandoImagen(true);
-      return;
-    }
-
     if (!auditoriaActual) return;
     setExporting(true);
     try {
       if (formato === "excel") {
-        await exportarExcel(productos, filtro, auditoriaActual.nombre);
+        await exportarExcel(productos, pendingFiltro, auditoriaActual.nombre);
       } else if (formato === "pdf") {
-        await exportarPDF(productos, filtro, auditoriaActual.nombre);
+        await exportarPDF(productos, pendingFiltro, auditoriaActual.nombre);
       }
     } catch (e) {
       Alert.alert("Error al exportar", String(e));
@@ -122,34 +105,9 @@ export default function ResumenScreen() {
     }
   };
 
-  useEffect(() => {
-    if (imagenLista && capturandoImagen && reporteImagenRef.current) {
-      captureRef(reporteImagenRef, { format: "png", quality: 0.95, result: "tmpfile" })
-        .then(async (uri) => {
-          setCapturandoImagen(false);
-          setImagenLista(false);
-          await Sharing.shareAsync(uri, {
-            mimeType: "image/png",
-            dialogTitle: `Exportar Imagen — ${auditoriaActual?.nombre ?? ""}`,
-            UTI: "public.png",
-          });
-        })
-        .catch((err) => {
-          setCapturandoImagen(false);
-          setImagenLista(false);
-          Alert.alert("Error al exportar imagen", String(err));
-        });
-    }
-  }, [imagenLista, capturandoImagen]);
-
   const isWeb = Platform.OS === "web";
   const topPad = isWeb ? 67 : insets.top;
   const botPad = isWeb ? 34 : insets.bottom;
-
-  const productosParaImagen = useMemo(
-    () => getProductosFiltrados(productos, pendingFiltroRef.current),
-    [productos, capturandoImagen]
-  );
 
   if (!auditoriaActual) {
     return (
@@ -293,35 +251,6 @@ export default function ResumenScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Vista oculta para captura de imagen */}
-      {capturandoImagen && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          <ScrollView>
-            <View
-              ref={reporteImagenRef}
-              style={styles.imagenReporte}
-              onLayout={() => setImagenLista(true)}
-            >
-              <ReporteImagenContenido
-                productos={productosParaImagen}
-                filtro={pendingFiltroRef.current}
-                nombre={auditoriaActual.nombre}
-                resumen={{
-                  faltantes: resumen.faltantes.length,
-                  sobrantes: resumen.sobrantes.length,
-                  correctos: resumen.correctos.length,
-                  sinContar: resumen.sin_contar.length,
-                }}
-              />
-            </View>
-          </ScrollView>
-          <View style={styles.capturando}>
-            <ActivityIndicator size="large" color="#3b82f6" />
-            <Text style={styles.capturandoText}>Generando imagen...</Text>
-          </View>
-        </View>
-      )}
-
       {/* Modal selector de formato */}
       <Modal
         visible={formatModal}
@@ -379,99 +308,6 @@ export default function ResumenScreen() {
   );
 }
 
-function ReporteImagenContenido({
-  productos,
-  filtro,
-  nombre,
-  resumen,
-}: {
-  productos: ProductoInventario[];
-  filtro: Filtro;
-  nombre: string;
-  resumen: { faltantes: number; sobrantes: number; correctos: number; sinContar: number };
-}) {
-  const titulo =
-    filtro === "faltantes"
-      ? "Productos Faltantes"
-      : filtro === "sobrantes"
-      ? "Productos Sobrantes"
-      : "Reporte Completo";
-
-  const fecha = new Date().toLocaleDateString("es-AR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
-  return (
-    <View style={img.root}>
-      <View style={img.headerCard}>
-        <Text style={img.auditNombre}>{nombre}</Text>
-        <Text style={img.auditSub}>{titulo} · {fecha}</Text>
-        <View style={img.statsRow}>
-          <View style={[img.stat, { backgroundColor: "#fee2e2" }]}>
-            <Text style={[img.statNum, { color: "#ef4444" }]}>{resumen.faltantes}</Text>
-            <Text style={[img.statLbl, { color: "#ef4444" }]}>Faltantes</Text>
-          </View>
-          <View style={[img.stat, { backgroundColor: "#fef3c7" }]}>
-            <Text style={[img.statNum, { color: "#f59e0b" }]}>{resumen.sobrantes}</Text>
-            <Text style={[img.statLbl, { color: "#f59e0b" }]}>Sobrantes</Text>
-          </View>
-          <View style={[img.stat, { backgroundColor: "#dcfce7" }]}>
-            <Text style={[img.statNum, { color: "#22c55e" }]}>{resumen.correctos}</Text>
-            <Text style={[img.statLbl, { color: "#22c55e" }]}>Correctos</Text>
-          </View>
-          <View style={[img.stat, { backgroundColor: "#f1f5f9" }]}>
-            <Text style={[img.statNum, { color: "#64748b" }]}>{resumen.sinContar}</Text>
-            <Text style={[img.statLbl, { color: "#64748b" }]}>Sin Contar</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={img.tableCard}>
-        <View style={img.tableHeader}>
-          <Text style={[img.th, { flex: 1.2 }]}>Código</Text>
-          <Text style={[img.th, { flex: 2.5 }]}>Nombre</Text>
-          <Text style={[img.th, { width: 44, textAlign: "center" }]}>Sis.</Text>
-          <Text style={[img.th, { width: 44, textAlign: "center" }]}>Fís.</Text>
-          <Text style={[img.th, { width: 44, textAlign: "center" }]}>Dif.</Text>
-          <Text style={[img.th, { width: 70, textAlign: "center" }]}>Estado</Text>
-        </View>
-        {productos.map((p, i) => {
-          const estado = getEstadoProducto(p);
-          const diff = p.stock_fisico !== null ? getDiferencia(p) : null;
-          const color =
-            estado === "correcto" ? "#22c55e" : estado === "sobrante" ? "#f59e0b" : estado === "faltante" ? "#ef4444" : "#64748b";
-          const etiqueta =
-            estado === "correcto" ? "✓" : estado === "sobrante" ? "↑" : estado === "faltante" ? "↓" : "—";
-          const diffText = diff === null ? "—" : diff > 0 ? `+${diff}` : String(diff);
-          const diffColor = diff === null ? "#64748b" : diff === 0 ? "#22c55e" : diff > 0 ? "#f59e0b" : "#ef4444";
-
-          return (
-            <View key={p.id} style={[img.tableRow, i % 2 === 0 ? {} : { backgroundColor: "#f8fafc" }]}>
-              <Text style={[img.td, { flex: 1.2, color: "#3b82f6", fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
-                {p.codigo}
-              </Text>
-              <Text style={[img.td, { flex: 2.5 }]} numberOfLines={2}>
-                {p.nombre}
-              </Text>
-              <Text style={[img.td, { width: 44, textAlign: "center" }]}>{p.stock_sistema}</Text>
-              <Text style={[img.td, { width: 44, textAlign: "center" }]}>{p.stock_fisico ?? "—"}</Text>
-              <Text style={[img.td, { width: 44, textAlign: "center", color: diffColor, fontFamily: "Inter_700Bold" }]}>
-                {diffText}
-              </Text>
-              <View style={[img.estadoBadge, { width: 70, backgroundColor: `${color}20` }]}>
-                <Text style={[img.estadoText, { color }]}>{etiqueta}</Text>
-              </View>
-            </View>
-          );
-        })}
-      </View>
-
-      <Text style={img.footer}>Generado con Auditoría de Inventario</Text>
-    </View>
-  );
-}
 
 function ResumenRow({ item, C }: { item: ResumenItem; C: typeof Colors.dark }) {
   const { producto, estado, diff } = item;
@@ -600,26 +436,4 @@ const styles = StyleSheet.create({
   formatoDesc: { fontSize: 10, textAlign: "center", lineHeight: 14 },
   cancelBtn: { borderTopWidth: 1, paddingTop: 16, alignItems: "center" },
   cancelText: { fontSize: 15 },
-  imagenReporte: { width: 400, backgroundColor: "#f8fafc", padding: 16 },
-  capturando: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.4)", gap: 12 },
-  capturandoText: { color: "#fff", fontSize: 16, fontFamily: "Inter_600SemiBold" },
-});
-
-const img = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#f8fafc", padding: 16, gap: 14 },
-  headerCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, gap: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2 },
-  auditNombre: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#0f172a" },
-  auditSub: { fontSize: 12, color: "#64748b", fontFamily: "Inter_400Regular" },
-  statsRow: { flexDirection: "row", gap: 8 },
-  stat: { flex: 1, borderRadius: 10, padding: 10, alignItems: "center", gap: 2 },
-  statNum: { fontSize: 20, fontFamily: "Inter_700Bold" },
-  statLbl: { fontSize: 10, fontFamily: "Inter_400Regular" },
-  tableCard: { backgroundColor: "#fff", borderRadius: 14, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2 },
-  tableHeader: { flexDirection: "row", backgroundColor: "#1e293b", paddingHorizontal: 10, paddingVertical: 8, alignItems: "center", gap: 4 },
-  th: { color: "#fff", fontSize: 10, fontFamily: "Inter_600SemiBold" },
-  tableRow: { flexDirection: "row", paddingHorizontal: 10, paddingVertical: 8, alignItems: "center", gap: 4, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
-  td: { color: "#1e293b", fontSize: 10, fontFamily: "Inter_400Regular" },
-  estadoBadge: { borderRadius: 8, paddingHorizontal: 4, paddingVertical: 3, alignItems: "center", justifyContent: "center" },
-  estadoText: { fontSize: 11, fontFamily: "Inter_700Bold" },
-  footer: { textAlign: "center", fontSize: 10, color: "#94a3b8", fontFamily: "Inter_400Regular", paddingBottom: 8 },
 });
