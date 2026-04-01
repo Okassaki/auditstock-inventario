@@ -229,7 +229,7 @@ export async function exportarExcel(
     // xlsx devuelve un Array o Uint8Array según el entorno
     // Buffer.from() lo acepta en cualquier caso y produce base64 correcto
     const wbout = write(wb, { type: "array", bookType: "xlsx" });
-    const base64 = Buffer.from(wbout as ArrayLike<number>).toString("base64");
+    const base64 = Buffer.from(wbout instanceof Uint8Array ? wbout : new Uint8Array(wbout as ArrayLike<number>)).toString("base64");
 
     const filePath = `${LegacyFS.cacheDirectory}${fileName}`;
     await LegacyFS.writeAsStringAsync(filePath, base64, {

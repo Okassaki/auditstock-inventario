@@ -162,6 +162,7 @@ export default function InicioScreen() {
           nombre: p.nombre,
           stock_sistema: p.stock_sistema,
           imeis_sistema: p.imeis_sistema ?? null,
+          comentario: null,
         })),
         audId,
         false

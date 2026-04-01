@@ -115,7 +115,8 @@ interface DBContextValue {
   actualizarConteo: (
     productoId: number,
     stockFisico: number,
-    imeisFisicos?: string[]
+    imeisFisicos?: string[],
+    comentario?: string
   ) => Promise<void>;
   actualizarAuditores: (id: number, auditor1: string, auditor2: string) => Promise<void>;
   eliminarAuditoria: (id: number) => Promise<void>;
