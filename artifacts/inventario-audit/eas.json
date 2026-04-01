@@ -5,7 +5,6 @@
   },
   "build": {
     "preview": {
-      "channel": "preview",
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"

@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "inventario-audit",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.auditstock.inventario",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
@@ -49,7 +49,6 @@
       "expo-font",
       "expo-web-browser",
       "expo-sqlite",
-      "expo-updates",
       [
         "expo-camera",
         {
@@ -63,15 +62,6 @@
         }
       ]
     ],
-    "updates": {
-      "url": "https://u.expo.dev/82653458-4336-45d4-9b1d-a3c6410411ca",
-      "enabled": true,
-      "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "experiments": {
       "typedRoutes": true
     },
