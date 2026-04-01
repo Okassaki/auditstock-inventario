@@ -1,6 +1,6 @@
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL ??
-  "https://439c42d1-136d-446b-bfa8-78b46cf7a994-00-3pt3107uvwsb4.janeway.replit.dev/api-server";
+  "https://439c42d1-136d-446b-bfa8-78b46cf7a994-00-3pt3107uvwsb4.janeway.replit.dev";
 
 export const API_URL = `${API_BASE}/api`;
 
