@@ -8,6 +8,8 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { reportarProgreso } from "@/utils/api";
+import { useStoreConfig } from "@/context/StoreConfigContext";
 
 export interface ProductoInventario {
   id: number;
@@ -133,6 +135,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [productos, setProductos] = useState<ProductoInventario[]>([]);
   const [inconsistencias, setInconsistencias] = useState<Inconsistencia[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Código de tienda para reportar progreso — via ref para no afectar dependencias de useCallback
+  const { storeConfig } = useStoreConfig();
+  const storeConfigRef = useRef(storeConfig);
+  useEffect(() => { storeConfigRef.current = storeConfig; }, [storeConfig]);
 
   // For native SQLite
   const dbRef = useRef<any>(null);
@@ -263,12 +270,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const refreshProductos = useCallback(async () => {
     if (!auditoriaActual) return;
     let prods: ProductoInventario[];
+    let contados = 0;
     if (dbRef.current) {
       prods = await dbRef.current.getAllAsync(
         "SELECT * FROM productos WHERE auditoria_id = ? ORDER BY nombre ASC",
         [auditoriaActual.id]
       );
-      const contados = prods.filter((p) => p.stock_fisico !== null).length;
+      contados = prods.filter((p) => p.stock_fisico !== null).length;
       await dbRef.current.runAsync(
         "UPDATE auditorias SET total_productos = ?, total_contados = ?, fecha_modificacion = ? WHERE id = ?",
         [prods.length, contados, new Date().toISOString(), auditoriaActual.id]
@@ -278,7 +286,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       );
     } else {
       prods = asGetProductosByAuditoria(auditoriaActual.id);
-      const contados = prods.filter((p) => p.stock_fisico !== null).length;
+      contados = prods.filter((p) => p.stock_fisico !== null).length;
       storeRef.current.auds = storeRef.current.auds.map((a) =>
         a.id === auditoriaActual.id
           ? { ...a, total_productos: prods.length, total_contados: contados, fecha_modificacion: new Date().toISOString() }
@@ -290,6 +298,19 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       );
     }
     setProductos(prods);
+
+    // Reportar progreso al servidor en segundo plano (silencioso si no hay red)
+    const cfg = storeConfigRef.current;
+    if (cfg && auditoriaActual.estado !== "archivada") {
+      reportarProgreso(
+        cfg.codigo,
+        String(auditoriaActual.id),
+        auditoriaActual.nombre,
+        prods.length,
+        contados,
+        auditoriaActual.estado
+      ).catch(() => {});
+    }
   }, [auditoriaActual, asGetProductosByAuditoria]);
 
   const crearAuditoria = useCallback(async (nombre: string, auditor1?: string, auditor2?: string): Promise<number> => {
