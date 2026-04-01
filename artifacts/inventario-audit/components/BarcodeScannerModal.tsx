@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { Audio } from "expo-av";
-import React, { useEffect, useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -117,23 +117,6 @@ function NativeScannerModal({
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
-
-  // Cargar sonido de beep al montar
-  useEffect(() => {
-    let sound: Audio.Sound | null = null;
-    Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
-    Audio.Sound.createAsync(require("../assets/sounds/beep.wav"))
-      .then(({ sound: s }) => {
-        sound = s;
-        soundRef.current = s;
-      })
-      .catch(() => {});
-    return () => {
-      sound?.unloadAsync().catch(() => {});
-    };
-  }, []);
-
   // Pedir permiso automáticamente cuando el modal se abre
   useEffect(() => {
     if (visible && permission !== null && !permission.granted && permission.canAskAgain) {
@@ -148,21 +131,10 @@ function NativeScannerModal({
     }
   }, [visible]);
 
-  const playBeep = async () => {
-    try {
-      const sound = soundRef.current;
-      if (!sound) return;
-      await sound.setPositionAsync(0);
-      await sound.playAsync();
-    } catch {
-      // silencioso si falla
-    }
-  };
-
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
-    playBeep();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onScan(data);
     setTimeout(() => setScanned(false), 1500);
   };

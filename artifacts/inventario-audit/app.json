@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.auditstock.inventario",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
@@ -30,8 +30,7 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -41,7 +40,6 @@
       "assets/**"
     ],
     "plugins": [
-      "expo-av",
       [
         "expo-router",
         {
