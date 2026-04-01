@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -242,7 +243,7 @@ export default function ConteoScreen() {
         onRequestClose={() => setSelectedProduct(null)}
       >
         {selectedProduct && (
-          <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <View
               style={[
                 styles.modalBox,
@@ -411,7 +412,7 @@ export default function ConteoScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         )}
         <BarcodeScannerModal
           visible={showImeiScanner}
@@ -432,7 +433,7 @@ export default function ConteoScreen() {
         onRequestClose={() => setShowComentarioModal(false)}
       >
         {selectedProduct && pendingStock !== null && (
-          <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
               <View style={styles.modalHandle} />
 
@@ -531,7 +532,7 @@ export default function ConteoScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         )}
       </Modal>
     </View>

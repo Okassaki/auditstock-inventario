@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -441,41 +442,39 @@ export default function InicioScreen() {
                   </View>
                 </TouchableOpacity>
 
-                <View style={[styles.audActions, { borderTopColor: C.surfaceBorder }]}>
-                  {!isArchivada && (
-                    <>
-                      <TouchableOpacity
-                        onPress={() => handleImportar(aud.id)}
-                        style={styles.audAction}
-                      >
-                        <Feather name="upload" size={16} color={C.primary} />
-                        <Text style={[styles.audActionText, { color: C.primary, fontFamily: "Inter_500Medium" }]}>
-                          Importar Excel
-                        </Text>
-                      </TouchableOpacity>
-                      <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
-                      <TouchableOpacity
-                        onPress={() => setAuditoriaAArchivar(aud)}
-                        style={styles.audAction}
-                      >
-                        <Feather name="archive" size={16} color={C.warning} />
-                        <Text style={[styles.audActionText, { color: C.warning, fontFamily: "Inter_500Medium" }]}>
-                          Archivar
-                        </Text>
-                      </TouchableOpacity>
-                      <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
-                    </>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => handleEliminar(aud)}
-                    style={styles.audAction}
-                  >
-                    <Feather name="trash-2" size={16} color={C.danger} />
-                    <Text style={[styles.audActionText, { color: C.danger, fontFamily: "Inter_500Medium" }]}>
-                      Eliminar
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                {!isArchivada && (
+                  <View style={[styles.audActions, { borderTopColor: C.surfaceBorder }]}>
+                    <TouchableOpacity
+                      onPress={() => handleImportar(aud.id)}
+                      style={styles.audAction}
+                    >
+                      <Feather name="upload" size={16} color={C.primary} />
+                      <Text style={[styles.audActionText, { color: C.primary, fontFamily: "Inter_500Medium" }]}>
+                        Importar Excel
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
+                    <TouchableOpacity
+                      onPress={() => setAuditoriaAArchivar(aud)}
+                      style={styles.audAction}
+                    >
+                      <Feather name="archive" size={16} color={C.warning} />
+                      <Text style={[styles.audActionText, { color: C.warning, fontFamily: "Inter_500Medium" }]}>
+                        Archivar
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
+                    <TouchableOpacity
+                      onPress={() => handleEliminar(aud)}
+                      style={styles.audAction}
+                    >
+                      <Feather name="trash-2" size={16} color={C.danger} />
+                      <Text style={[styles.audActionText, { color: C.danger, fontFamily: "Inter_500Medium" }]}>
+                        Eliminar
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             );
           };
@@ -551,7 +550,7 @@ export default function InicioScreen() {
           setNombreNueva("");
         }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
             <View style={styles.modalHandle} />
             <ScrollView
@@ -611,7 +610,7 @@ export default function InicioScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Modal de activación — pide auditores al seleccionar una auditoría */}
@@ -621,7 +620,7 @@ export default function InicioScreen() {
         transparent
         onRequestClose={() => setAuditoriaParaActivar(null)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
             <View style={styles.modalHandle} />
             <ScrollView
@@ -710,7 +709,7 @@ export default function InicioScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Modal resultado importación — reemplaza Alert.alert (no funciona en móvil web) */}
@@ -790,7 +789,7 @@ export default function InicioScreen() {
                 onPress={confirmarArchivar}
               >
                 <Text style={[styles.confirmBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
-                  Confirmar y archivar
+                  Aceptar
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1035,7 +1034,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
   },
-  confirmBtnText: { fontSize: 15 },
+  confirmBtnText: { fontSize: 15, textAlign: "center" },
   archivadasHeader: {
     flexDirection: "row",
     alignItems: "center",
