@@ -87,6 +87,9 @@ function ClassicTabLayout() {
   const C = isDark ? Colors.dark : Colors.light;
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const insets = useSafeAreaInsets();
+
+  const firmaBottom = (isWeb ? 84 : 56) + insets.bottom + 6;
 
   return (
     <View style={{ flex: 1 }}>
@@ -169,7 +172,7 @@ function ClassicTabLayout() {
           }}
         />
       </Tabs>
-      <Text style={styles.firma}>Daniel E. Sanchez A.</Text>
+      <Text style={[styles.firma, { bottom: firmaBottom }]} pointerEvents="none">Daniel E. Sanchez A.</Text>
     </View>
   );
 }
@@ -184,7 +187,6 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   firma: {
     position: "absolute",
-    bottom: 64,
     left: 0,
     right: 0,
     textAlign: "center",
