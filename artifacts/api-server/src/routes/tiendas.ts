@@ -46,6 +46,75 @@ router.get("/tiendas/:codigo", async (req, res) => {
   }
 });
 
+const updateTiendaSchema = z.object({
+  nombre: z.string().min(1).optional(),
+  codigo: z.string().min(1).optional(),
+});
+
+router.put("/tiendas/:codigo", async (req, res) => {
+  try {
+    const [tienda] = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo)).limit(1);
+    if (!tienda) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    const body = updateTiendaSchema.parse(req.body);
+    if (body.codigo && body.codigo !== req.params.codigo) {
+      const existing = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, body.codigo)).limit(1);
+      if (existing.length > 0) {
+        res.status(409).json({ error: "Ya existe una tienda con ese código" });
+        return;
+      }
+    }
+    const [updated] = await db.update(tiendasTable)
+      .set({ ...(body.nombre ? { nombre: body.nombre } : {}), ...(body.codigo ? { codigo: body.codigo } : {}) })
+      .where(eq(tiendasTable.codigo, req.params.codigo))
+      .returning();
+    res.json(updated);
+  } catch (err: any) {
+    if (err?.name === "ZodError") {
+      res.status(400).json({ error: "Datos inválidos", detalles: err.issues });
+      return;
+    }
+    res.status(500).json({ error: "Error al actualizar tienda" });
+  }
+});
+
+router.delete("/tiendas/:codigo", async (req, res) => {
+  try {
+    const [tienda] = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo)).limit(1);
+    if (!tienda) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    await db.delete(progresoAuditoriasTable).where(eq(progresoAuditoriasTable.tiendaCodigo, req.params.codigo));
+    await db.delete(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo));
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Error al eliminar tienda" });
+  }
+});
+
+router.delete("/tiendas/:codigo/progreso/:auditoriaId", async (req, res) => {
+  try {
+    const [tienda] = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo)).limit(1);
+    if (!tienda) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    const [deleted] = await db.delete(progresoAuditoriasTable)
+      .where(eq(progresoAuditoriasTable.auditoriaId, req.params.auditoriaId))
+      .returning();
+    if (!deleted) {
+      res.status(404).json({ error: "Auditoría no encontrada" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Error al eliminar auditoría" });
+  }
+});
+
 const progresoSchema = z.object({
   auditoriaId: z.string(),
   auditoriaNombre: z.string(),
