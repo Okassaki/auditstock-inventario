@@ -1,6 +1,6 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import {
   Icon,
   Label,
@@ -9,7 +9,7 @@ import {
 import { SymbolView } from "expo-symbols";
 import { MaterialCommunityIcons, Feather, Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
@@ -41,6 +41,7 @@ function NativeTabLayout() {
 function StoreBanner() {
   const { storeConfig } = useStoreConfig();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const C = Colors.dark;
   if (!storeConfig) return null;
   return (
@@ -48,6 +49,14 @@ function StoreBanner() {
       <Feather name="map-pin" size={11} color={C.primary} />
       <Text style={bannerStyles.text} numberOfLines={1}>{storeConfig.nombre}</Text>
       <Text style={bannerStyles.code}>{storeConfig.codigo}</Text>
+      <TouchableOpacity
+        onPress={() => router.push("/boss-login")}
+        style={bannerStyles.bossBtn}
+        activeOpacity={0.6}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Feather name="shield" size={14} color="#8B5CF6" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -78,6 +87,10 @@ const bannerStyles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+  },
+  bossBtn: {
+    padding: 2,
+    marginLeft: 4,
   },
 });
 
