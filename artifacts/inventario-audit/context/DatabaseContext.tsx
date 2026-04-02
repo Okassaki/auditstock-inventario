@@ -302,13 +302,21 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     // Reportar progreso al servidor en segundo plano (silencioso si no hay red)
     const cfg = storeConfigRef.current;
     if (cfg && auditoriaActual.estado !== "archivada") {
+      const snapshot = prods.map((p) => ({
+        codigo: p.codigo,
+        nombre: p.nombre,
+        stock_sistema: p.stock_sistema,
+        stock_fisico: p.stock_fisico,
+        comentario: p.comentario,
+      }));
       reportarProgreso(
         cfg.codigo,
         String(auditoriaActual.id),
         auditoriaActual.nombre,
         prods.length,
         contados,
-        auditoriaActual.estado
+        auditoriaActual.estado,
+        snapshot
       ).catch(() => {});
     }
   }, [auditoriaActual, asGetProductosByAuditoria]);

@@ -115,12 +115,21 @@ router.delete("/tiendas/:codigo/progreso/:auditoriaId", async (req, res) => {
   }
 });
 
+const productoSnapshotSchema = z.object({
+  codigo: z.string(),
+  nombre: z.string(),
+  stock_sistema: z.number(),
+  stock_fisico: z.number().nullable(),
+  comentario: z.string().nullable(),
+});
+
 const progresoSchema = z.object({
   auditoriaId: z.string(),
   auditoriaNombre: z.string(),
   totalProductos: z.number().int().min(0),
   totalContados: z.number().int().min(0),
   estado: z.enum(["activa", "completada", "archivada"]).default("activa"),
+  productos: z.array(productoSnapshotSchema).optional(),
 });
 
 router.post("/tiendas/:codigo/progreso", async (req, res) => {
@@ -131,6 +140,7 @@ router.post("/tiendas/:codigo/progreso", async (req, res) => {
       return;
     }
     const body = progresoSchema.parse(req.body);
+    const productosJson = body.productos ? JSON.stringify(body.productos) : null;
     const existing = await db.select().from(progresoAuditoriasTable)
       .where(eq(progresoAuditoriasTable.auditoriaId, body.auditoriaId))
       .limit(1);
@@ -140,6 +150,7 @@ router.post("/tiendas/:codigo/progreso", async (req, res) => {
           totalProductos: body.totalProductos,
           totalContados: body.totalContados,
           estado: body.estado,
+          ...(productosJson !== null ? { productosJson } : {}),
           actualizadoAt: new Date(),
         })
         .where(eq(progresoAuditoriasTable.auditoriaId, body.auditoriaId))
@@ -153,6 +164,7 @@ router.post("/tiendas/:codigo/progreso", async (req, res) => {
         totalProductos: body.totalProductos,
         totalContados: body.totalContados,
         estado: body.estado,
+        productosJson,
       }).returning();
       res.status(201).json(created);
     }

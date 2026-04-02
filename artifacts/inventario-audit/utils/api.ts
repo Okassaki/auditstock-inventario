@@ -26,6 +26,14 @@ export interface TiendaAPI {
   creadoAt: string;
 }
 
+export interface ProductoSnapshot {
+  codigo: string;
+  nombre: string;
+  stock_sistema: number;
+  stock_fisico: number | null;
+  comentario: string | null;
+}
+
 export interface ProgresoAPI {
   id: number;
   tiendaCodigo: string;
@@ -34,6 +42,7 @@ export interface ProgresoAPI {
   totalProductos: number;
   totalContados: number;
   estado: "activa" | "completada" | "archivada";
+  productosJson: string | null;
   actualizadoAt: string;
 }
 
@@ -53,11 +62,12 @@ export async function reportarProgreso(
   auditoriaNombre: string,
   totalProductos: number,
   totalContados: number,
-  estado: "activa" | "completada" | "archivada" = "activa"
+  estado: "activa" | "completada" | "archivada" = "activa",
+  productos?: ProductoSnapshot[]
 ): Promise<void> {
   await apiFetch(`/tiendas/${encodeURIComponent(codigoTienda)}/progreso`, {
     method: "POST",
-    body: JSON.stringify({ auditoriaId, auditoriaNombre, totalProductos, totalContados, estado }),
+    body: JSON.stringify({ auditoriaId, auditoriaNombre, totalProductos, totalContados, estado, productos }),
   });
 }
 

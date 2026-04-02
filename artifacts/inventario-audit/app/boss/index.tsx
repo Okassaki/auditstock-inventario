@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -66,7 +67,7 @@ const badge = StyleSheet.create({
   text: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
 });
 
-function TiendaCard({ item }: { item: ProgresoGeneralItem }) {
+function TiendaCard({ item, onPress }: { item: ProgresoGeneralItem; onPress?: () => void }) {
   const p = item.progresoActivo;
   const porcentaje = pct(item);
   const color = estadoColor(item);
@@ -75,8 +76,14 @@ function TiendaCard({ item }: { item: ProgresoGeneralItem }) {
     ? new Date(p.actualizadoAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
     : null;
 
+  const hasProductos = !!(p?.productosJson);
+
   return (
-    <View style={[styles.card, { borderLeftColor: color }]}>
+    <TouchableOpacity
+      style={[styles.card, { borderLeftColor: color }]}
+      onPress={hasProductos ? onPress : undefined}
+      activeOpacity={hasProductos ? 0.75 : 1}
+    >
       <View style={styles.cardTop}>
         <View style={styles.cardLeft}>
           <Text style={styles.cardNombre}>{item.tienda.nombre}</Text>
@@ -98,20 +105,43 @@ function TiendaCard({ item }: { item: ProgresoGeneralItem }) {
             <Text style={styles.statText}>{p.totalContados} / {p.totalProductos} productos</Text>
             {lastUpdate && <Text style={styles.timeText}>Actualizado {lastUpdate}</Text>}
           </View>
+          {hasProductos && (
+            <View style={styles.verProductosRow}>
+              <Feather name="list" size={12} color={BOSS_COLOR} />
+              <Text style={styles.verProductosText}>Ver productos y comentarios</Text>
+              <Feather name="chevron-right" size={12} color={BOSS_COLOR} />
+            </View>
+          )}
         </>
       ) : (
         <Text style={styles.sinAuditoria}>No hay auditoría activa · {item.totalAuditorias} historial</Text>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
 export default function DashboardScreen() {
+  const router = useRouter();
   const [data, setData] = useState<ProgresoGeneralItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  function irAProductos(item: ProgresoGeneralItem) {
+    const p = item.progresoActivo;
+    if (!p) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({
+      pathname: "/boss/productos",
+      params: {
+        codigo: item.tienda.codigo,
+        auditoriaId: p.auditoriaId,
+        auditoriaNombre: p.auditoriaNombre,
+        tiendaNombre: item.tienda.nombre,
+      },
+    });
+  }
 
   const fetchData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -192,7 +222,7 @@ export default function DashboardScreen() {
       <FlatList
         data={data}
         keyExtractor={(item) => item.tienda.codigo}
-        renderItem={({ item }) => <TiendaCard item={item} />}
+        renderItem={({ item }) => <TiendaCard item={item} onPress={() => irAProductos(item)} />}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl
@@ -277,6 +307,16 @@ const styles = StyleSheet.create({
   statText: { fontSize: 12, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
   timeText: { fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
   sinAuditoria: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
+  verProductosRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: `${BOSS_COLOR}12`,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  verProductosText: { flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: BOSS_COLOR },
   empty: { alignItems: "center", paddingVertical: 60, gap: 12 },
   emptyText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: TEXT_MUTED },
   emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED },

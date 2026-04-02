@@ -14,7 +14,6 @@ const TEXT_MUTED = "#6B5FA8";
 
 export default function BossLayout() {
   const { logout } = useBossConfig();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   function handleLogout() {
@@ -73,6 +72,10 @@ export default function BossLayout() {
             title: "Tiendas",
             tabBarIcon: ({ color, size }) => <Feather name="map-pin" size={size} color={color} />,
           }}
+        />
+        <Tabs.Screen
+          name="productos"
+          options={{ href: null, headerShown: false }}
         />
       </Tabs>
     </View>

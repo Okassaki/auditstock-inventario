@@ -17,6 +17,7 @@ export const progresoAuditoriasTable = pgTable("progreso_auditorias", {
   totalProductos: integer("total_productos").notNull().default(0),
   totalContados: integer("total_contados").notNull().default(0),
   estado: text("estado").notNull().default("activa"),
+  productosJson: text("productos_json"),
   actualizadoAt: timestamp("actualizado_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
