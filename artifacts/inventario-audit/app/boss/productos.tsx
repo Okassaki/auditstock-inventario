@@ -1,22 +1,27 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { obtenerProgresotienda, type ProductoSnapshot } from "@/utils/api";
 import { exportarExcelBoss } from "@/utils/excel";
 
 const BOSS_COLOR = "#8B5CF6";
 const BG = "#0D0A1E";
 const SURFACE = "#1A1530";
+const SURFACE_EL = "#221C40";
 const SURFACE_BORDER = "#2D2550";
 const TEXT = "#F0F4FF";
 const TEXT_SEC = "#8B7FBA";
@@ -52,22 +57,24 @@ function estadoColor(e: EstadoProducto) {
   }
 }
 
-function ProductoRow({ item }: { item: ProductoSnapshot }) {
+function ProductoCard({ item, onPress }: { item: ProductoSnapshot; onPress: () => void }) {
   const estado = getEstado(item);
   const color = estadoColor(estado);
   const diff = item.stock_fisico !== null ? item.stock_fisico - item.stock_sistema : null;
 
   return (
-    <View style={[styles.row, { borderLeftColor: color }]}>
-      <View style={styles.rowTop}>
-        <View style={styles.rowLeft}>
-          <Text style={styles.rowNombre} numberOfLines={2}>{item.nombre}</Text>
-          <Text style={styles.rowCodigo}>{item.codigo}</Text>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={[styles.card, { borderLeftColor: color }]}
+    >
+      <View style={styles.cardTop}>
+        <View style={styles.cardLeft}>
+          <Text style={styles.cardCodigo}>{item.codigo}</Text>
+          <Text style={styles.cardNombre} numberOfLines={2}>{item.nombre}</Text>
         </View>
-        <View style={styles.rowRight}>
-          <View style={[styles.badge, { backgroundColor: `${color}20` }]}>
-            <Text style={[styles.badgeText, { color }]}>{estadoLabel(estado)}</Text>
-          </View>
+        <View style={[styles.badge, { backgroundColor: `${color}20` }]}>
+          <Text style={[styles.badgeText, { color }]}>{estadoLabel(estado)}</Text>
         </View>
       </View>
 
@@ -79,7 +86,12 @@ function ProductoRow({ item }: { item: ProductoSnapshot }) {
         <View style={styles.stockDivider} />
         <View style={styles.stockItem}>
           <Text style={styles.stockLabel}>Físico</Text>
-          <Text style={[styles.stockVal, { color: item.stock_fisico === null ? TEXT_MUTED : TEXT }]}>
+          <Text style={[styles.stockVal, {
+            color: item.stock_fisico === null
+              ? TEXT_MUTED
+              : diff === 0 ? SUCCESS
+              : diff! > 0 ? WARNING : DANGER
+          }]}>
             {item.stock_fisico ?? "—"}
           </Text>
         </View>
@@ -98,11 +110,140 @@ function ProductoRow({ item }: { item: ProductoSnapshot }) {
 
       {item.comentario ? (
         <View style={styles.comentarioWrap}>
-          <Feather name="message-square" size={12} color={BOSS_COLOR} />
-          <Text style={styles.comentarioText}>{item.comentario}</Text>
+          <Feather name="message-square" size={12} color={diff !== null && diff < 0 ? DANGER : WARNING} />
+          <Text style={[styles.comentarioText, { color: diff !== null && diff < 0 ? DANGER : WARNING }]} numberOfLines={2}>
+            {item.comentario}
+          </Text>
         </View>
       ) : null}
-    </View>
+
+      <View style={styles.cardFooter}>
+        <Feather name="eye" size={12} color={TEXT_MUTED} />
+        <Text style={styles.cardFooterText}>Toca para ver detalle</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function DetalleModal({
+  producto,
+  onClose,
+}: {
+  producto: ProductoSnapshot | null;
+  onClose: () => void;
+}) {
+  if (!producto) return null;
+  const estado = getEstado(producto);
+  const color = estadoColor(estado);
+  const diff = producto.stock_fisico !== null ? producto.stock_fisico - producto.stock_sistema : null;
+
+  return (
+    <Modal
+      visible={!!producto}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <View style={styles.modalHandle} />
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 16 }}>
+
+            {/* Encabezado del producto */}
+            <View style={[styles.detalleHeader, { borderLeftColor: color, borderLeftWidth: 3 }]}>
+              <Text style={styles.detalleCodigo}>{producto.codigo}</Text>
+              <Text style={styles.detalleNombre}>{producto.nombre}</Text>
+              <View style={[styles.badge, { backgroundColor: `${color}20`, alignSelf: "flex-start", marginTop: 6 }]}>
+                <Text style={[styles.badgeText, { color }]}>{estadoLabel(estado)}</Text>
+              </View>
+            </View>
+
+            {/* Stocks */}
+            <View style={styles.detalleStocks}>
+              <View style={styles.detalleStockBox}>
+                <Text style={styles.detalleStockLabel}>Stock Sistema</Text>
+                <Text style={styles.detalleStockNum}>{producto.stock_sistema}</Text>
+              </View>
+              <Feather name="chevron-right" size={22} color={TEXT_MUTED} />
+              <View style={styles.detalleStockBox}>
+                <Text style={styles.detalleStockLabel}>Stock Físico</Text>
+                <Text style={[styles.detalleStockNum, {
+                  color: producto.stock_fisico === null
+                    ? TEXT_MUTED
+                    : diff === 0 ? SUCCESS
+                    : diff! > 0 ? WARNING : DANGER
+                }]}>
+                  {producto.stock_fisico ?? "—"}
+                </Text>
+              </View>
+              {diff !== null && (
+                <>
+                  <Feather name="chevron-right" size={22} color={TEXT_MUTED} />
+                  <View style={styles.detalleStockBox}>
+                    <Text style={styles.detalleStockLabel}>Diferencia</Text>
+                    <Text style={[styles.detalleStockNum, { color: diff === 0 ? SUCCESS : diff > 0 ? WARNING : DANGER }]}>
+                      {diff > 0 ? `+${diff}` : diff}
+                    </Text>
+                  </View>
+                </>
+              )}
+            </View>
+
+            {/* Resumen diferencia */}
+            {diff !== null && diff !== 0 && (
+              <View style={[styles.difBox, {
+                backgroundColor: diff < 0 ? `${DANGER}15` : `${WARNING}15`,
+                borderColor: diff < 0 ? `${DANGER}40` : `${WARNING}40`,
+              }]}>
+                <Feather
+                  name={diff < 0 ? "trending-down" : "trending-up"}
+                  size={18}
+                  color={diff < 0 ? DANGER : WARNING}
+                />
+                <Text style={[styles.difText, { color: diff < 0 ? DANGER : WARNING }]}>
+                  {diff < 0 ? "Faltante" : "Sobrante"} de {Math.abs(diff)} unidad{Math.abs(diff) !== 1 ? "es" : ""}
+                </Text>
+              </View>
+            )}
+
+            {/* Comentario */}
+            {producto.comentario ? (
+              <View>
+                <Text style={styles.detalleSeccion}>COMENTARIO DEL AUDITOR</Text>
+                <View style={[styles.comentarioBox, {
+                  borderColor: diff !== null && diff < 0 ? `${DANGER}40` : `${WARNING}40`,
+                  backgroundColor: diff !== null && diff < 0 ? `${DANGER}10` : `${WARNING}10`,
+                }]}>
+                  <Feather name="message-square" size={14} color={diff !== null && diff < 0 ? DANGER : WARNING} />
+                  <Text style={[styles.comentarioFullText, { color: diff !== null && diff < 0 ? DANGER : WARNING }]}>
+                    {producto.comentario}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              diff !== null && diff !== 0 && (
+                <View style={[styles.sinComentarioBox, { borderColor: `${TEXT_MUTED}30` }]}>
+                  <Feather name="alert-circle" size={14} color={TEXT_MUTED} />
+                  <Text style={styles.sinComentarioText}>Sin comentario del auditor</Text>
+                </View>
+              )
+            )}
+
+            {/* Indicador solo lectura */}
+            <View style={styles.readonlyBadge}>
+              <Feather name="lock" size={12} color={TEXT_MUTED} />
+              <Text style={styles.readonlyText}>Vista de solo lectura — Boss Mode</Text>
+            </View>
+
+          </ScrollView>
+
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <Text style={styles.closeBtnText}>Cerrar</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -114,6 +255,7 @@ export default function ProductosScreen() {
     tiendaNombre: string;
   }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [productos, setProductos] = useState<ProductoSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +263,8 @@ export default function ProductosScreen() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<ProductoSnapshot | null>(null);
 
   async function handleExportar() {
     if (productos.length === 0) {
@@ -169,6 +313,16 @@ export default function ProductosScreen() {
     fetchProductos();
   }, [fetchProductos]);
 
+  const productosFiltrados = useMemo(() => {
+    if (!query.trim()) return productos;
+    const q = query.toLowerCase();
+    return productos.filter(
+      (p) =>
+        p.codigo.toLowerCase().includes(q) ||
+        p.nombre.toLowerCase().includes(q)
+    );
+  }, [productos, query]);
+
   const contados = productos.filter((p) => p.stock_fisico !== null).length;
   const correctos = productos.filter((p) => getEstado(p) === "correcto").length;
   const faltantes = productos.filter((p) => getEstado(p) === "faltante").length;
@@ -176,7 +330,8 @@ export default function ProductosScreen() {
   const sinContar = productos.filter((p) => getEstado(p) === "sin_contar").length;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="arrow-left" size={20} color={TEXT} />
@@ -186,20 +341,20 @@ export default function ProductosScreen() {
           <Text style={styles.headerSub} numberOfLines={1}>{auditoriaNombre}</Text>
         </View>
         <TouchableOpacity
-          style={styles.refreshBtn}
+          style={styles.iconBtn}
           onPress={() => fetchProductos(true)}
           disabled={refreshing}
         >
           <Feather name="refresh-cw" size={18} color={BOSS_COLOR} />
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.exportBtn, exporting && styles.exportBtnDisabled]}
+          style={[styles.iconBtn, (exporting || productos.length === 0) && { opacity: 0.35 }]}
           onPress={handleExportar}
           disabled={exporting || productos.length === 0}
         >
           {exporting
             ? <ActivityIndicator size="small" color={BOSS_COLOR} />
-            : <Feather name="download" size={18} color={productos.length > 0 ? BOSS_COLOR : TEXT_MUTED} />
+            : <Feather name="download" size={18} color={BOSS_COLOR} />
           }
         </TouchableOpacity>
       </View>
@@ -227,6 +382,7 @@ export default function ProductosScreen() {
         </View>
       ) : (
         <>
+          {/* Resumen de estados */}
           <View style={styles.statsRow}>
             <View style={[styles.statBox, { borderColor: `${SUCCESS}40` }]}>
               <Text style={[styles.statNum, { color: SUCCESS }]}>{correctos}</Text>
@@ -246,15 +402,41 @@ export default function ProductosScreen() {
             </View>
           </View>
 
+          {/* Barra de búsqueda */}
+          <View style={styles.searchWrap}>
+            <View style={styles.searchBox}>
+              <Feather name="search" size={16} color={TEXT_MUTED} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Buscar por código o nombre..."
+                placeholderTextColor={TEXT_MUTED}
+                style={styles.searchInput}
+                returnKeyType="search"
+                autoCorrect={false}
+              />
+              {query.length > 0 && (
+                <TouchableOpacity onPress={() => setQuery("")}>
+                  <Feather name="x" size={16} color={TEXT_MUTED} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
           {lastUpdate && (
-            <Text style={styles.updateNote}>Última actualización de la tienda: {lastUpdate}</Text>
+            <Text style={styles.updateNote}>
+              Última sync de la tienda: {lastUpdate} · {contados}/{productos.length} contados
+            </Text>
           )}
 
+          {/* Lista de productos */}
           <FlatList
-            data={productos}
+            data={productosFiltrados}
             keyExtractor={(item) => item.codigo}
-            renderItem={({ item }) => <ProductoRow item={item} />}
-            contentContainerStyle={styles.list}
+            renderItem={({ item }) => (
+              <ProductoCard item={item} onPress={() => setSelected(item)} />
+            )}
+            contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 20 }]}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -262,9 +444,18 @@ export default function ProductosScreen() {
                 tintColor={BOSS_COLOR}
               />
             }
+            ListEmptyComponent={
+              <View style={styles.center}>
+                <Feather name="search" size={32} color={TEXT_MUTED} />
+                <Text style={styles.emptyText}>Sin resultados</Text>
+                <Text style={styles.emptyDesc}>Intenta con otro código o nombre</Text>
+              </View>
+            }
           />
         </>
       )}
+
+      <DetalleModal producto={selected} onClose={() => setSelected(null)} />
     </View>
   );
 }
@@ -276,18 +467,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: SURFACE_BORDER,
-    gap: 12,
+    gap: 10,
   },
   backBtn: { padding: 4 },
   headerInfo: { flex: 1 },
   headerTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: TEXT },
-  headerSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: TEXT_MUTED, marginTop: 2 },
-  refreshBtn: { padding: 4 },
-  exportBtn: { padding: 4 },
-  exportBtnDisabled: { opacity: 0.4 },
+  headerSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: TEXT_MUTED, marginTop: 1 },
+  iconBtn: { padding: 6 },
   loadingText: { color: TEXT_SEC, fontFamily: "Inter_400Regular", fontSize: 14 },
   errorText: { color: DANGER, fontFamily: "Inter_400Regular", fontSize: 14, textAlign: "center" },
   retryBtn: {
@@ -301,7 +490,7 @@ const styles = StyleSheet.create({
   retryText: { color: BOSS_COLOR, fontFamily: "Inter_600SemiBold", fontSize: 14 },
   emptyText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: TEXT_MUTED },
   emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED, textAlign: "center" },
-  statsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+  statsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
   statBox: {
     flex: 1,
     backgroundColor: SURFACE,
@@ -313,28 +502,48 @@ const styles = StyleSheet.create({
   },
   statNum: { fontSize: 20, fontFamily: "Inter_700Bold" },
   statLabel: { fontSize: 10, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
+  searchWrap: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: SURFACE,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: SURFACE_BORDER,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    flex: 1,
+    color: TEXT,
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    padding: 0,
+  },
   updateNote: {
     textAlign: "center",
     fontSize: 11,
     fontFamily: "Inter_400Regular",
     color: TEXT_MUTED,
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   list: { padding: 14, gap: 10 },
-  row: {
+
+  // Product card
+  card: {
     backgroundColor: SURFACE,
     borderRadius: 12,
     padding: 14,
-    gap: 10,
+    gap: 8,
     borderLeftWidth: 3,
     borderWidth: 1,
     borderColor: SURFACE_BORDER,
   },
-  rowTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
-  rowLeft: { flex: 1, gap: 2, marginRight: 10 },
-  rowNombre: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: TEXT },
-  rowCodigo: { fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
-  rowRight: { alignItems: "flex-end" },
+  cardTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
+  cardLeft: { flex: 1, gap: 2 },
+  cardCodigo: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: BOSS_COLOR },
+  cardNombre: { fontSize: 14, fontFamily: "Inter_500Medium", color: TEXT, lineHeight: 19 },
   badge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   stockRow: { flexDirection: "row", alignItems: "center", gap: 0 },
@@ -346,9 +555,100 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 6,
-    backgroundColor: `${BOSS_COLOR}12`,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     borderRadius: 8,
-    padding: 8,
+    backgroundColor: `${DANGER}10`,
   },
-  comentarioText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: TEXT_SEC },
+  comentarioText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular" },
+  cardFooter: { flexDirection: "row", alignItems: "center", gap: 5 },
+  cardFooterText: { fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
+
+  // Detail Modal
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  modalBox: {
+    backgroundColor: SURFACE,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    gap: 16,
+    maxHeight: "85%",
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: SURFACE_BORDER,
+    alignSelf: "center",
+    marginBottom: 4,
+  },
+  detalleHeader: {
+    backgroundColor: SURFACE_EL,
+    borderRadius: 12,
+    padding: 14,
+    gap: 4,
+  },
+  detalleCodigo: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: BOSS_COLOR },
+  detalleNombre: { fontSize: 18, fontFamily: "Inter_700Bold", color: TEXT, lineHeight: 24 },
+  detalleStocks: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: SURFACE_EL,
+    borderRadius: 12,
+    padding: 16,
+  },
+  detalleStockBox: { flex: 1, alignItems: "center", gap: 4 },
+  detalleStockLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
+  detalleStockNum: { fontSize: 32, fontFamily: "Inter_700Bold", color: TEXT },
+  difBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+  },
+  difText: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  detalleSeccion: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: TEXT_MUTED, letterSpacing: 0.8, marginBottom: 8 },
+  comentarioBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  comentarioFullText: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  sinComentarioBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  sinComentarioText: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
+  readonlyBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 4,
+  },
+  readonlyText: { fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
+  closeBtn: {
+    backgroundColor: `${BOSS_COLOR}20`,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: `${BOSS_COLOR}50`,
+  },
+  closeBtnText: { color: BOSS_COLOR, fontFamily: "Inter_700Bold", fontSize: 15 },
 });
