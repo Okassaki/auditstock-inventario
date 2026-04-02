@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { utils, write, read } from "xlsx";
 import type { ProductoInventario } from "@/context/DatabaseContext";
 import { getDiferencia, getEstadoProducto } from "@/context/DatabaseContext";
+import type { ProductoSnapshot } from "@/utils/api";
 
 export interface ExcelProducto {
   codigo: string;
@@ -304,4 +305,135 @@ export async function exportarExcel(
       );
     }
   }
+}
+
+// ─── Funciones de exportación para el Modo Jefe ──────────────────────────────
+
+function estadoBossLabel(p: ProductoSnapshot): string {
+  if (p.stock_fisico === null) return "Sin contar";
+  if (p.stock_fisico > p.stock_sistema) return "Sobrante";
+  if (p.stock_fisico < p.stock_sistema) return "Faltante";
+  return "Correcto";
+}
+
+async function compartirWorkbook(wb: any, fileName: string, dialogTitle: string): Promise<void> {
+  if (Platform.OS === "web") {
+    const wbout = write(wb, { type: "array", bookType: "xlsx" });
+    const blob = new Blob([new Uint8Array(wbout as ArrayLike<number>)], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } else {
+    const wbout = write(wb, { type: "array", bookType: "xlsx" });
+    const base64 = Buffer.from(
+      wbout instanceof Uint8Array ? wbout : new Uint8Array(wbout as ArrayLike<number>)
+    ).toString("base64");
+    const filePath = `${LegacyFS.cacheDirectory}${fileName}`;
+    await LegacyFS.writeAsStringAsync(filePath, base64, {
+      encoding: "base64" as LegacyFS.EncodingType,
+    });
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(filePath, {
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        dialogTitle,
+        UTI: "com.microsoft.excel.xlsx",
+      });
+    } else {
+      throw new Error("La función de compartir no está disponible en este dispositivo.");
+    }
+  }
+}
+
+function productoSnapshotToRow(p: ProductoSnapshot) {
+  return {
+    "Código": p.codigo,
+    "Nombre": p.nombre,
+    "Stock Sistema": p.stock_sistema,
+    "Stock Físico": p.stock_fisico ?? "Sin contar",
+    "Diferencia": p.stock_fisico !== null ? p.stock_fisico - p.stock_sistema : "-",
+    "Estado": estadoBossLabel(p),
+    "Comentario": p.comentario ?? "",
+  };
+}
+
+const COL_WIDTHS = [
+  { wch: 15 }, { wch: 30 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 35 },
+];
+
+/** Exporta la auditoría de una tienda (modo jefe) */
+export async function exportarExcelBoss(
+  productos: ProductoSnapshot[],
+  auditoriaNombre: string,
+  tiendaNombre: string
+): Promise<void> {
+  const wb = utils.book_new();
+  const ws = utils.json_to_sheet(productos.map(productoSnapshotToRow));
+  ws["!cols"] = COL_WIDTHS;
+  utils.book_append_sheet(wb, ws, "Auditoría");
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const safeName = tiendaNombre.replace(/[^\w\s-]/g, "").trim().slice(0, 20);
+  const fileName = `auditoria_${safeName}_${fecha}.xlsx`;
+  await compartirWorkbook(wb, fileName, `Exportar ${auditoriaNombre} — ${tiendaNombre}`);
+}
+
+export interface TiendaExportData {
+  tiendaNombre: string;
+  tiendaCodigo: string;
+  auditoriaNombre: string;
+  estado: string;
+  productos: ProductoSnapshot[];
+}
+
+/** Exporta la auditoría consolidada de todas las tiendas en un solo archivo */
+export async function exportarExcelConsolidado(tiendas: TiendaExportData[]): Promise<void> {
+  const wb = utils.book_new();
+
+  // Hoja de resumen
+  const resumen = tiendas.map((t) => {
+    const contados = t.productos.filter((p) => p.stock_fisico !== null).length;
+    const correctos = t.productos.filter((p) => p.stock_fisico !== null && p.stock_fisico === p.stock_sistema).length;
+    const faltantes = t.productos.filter((p) => p.stock_fisico !== null && p.stock_fisico < p.stock_sistema).length;
+    const sobrantes = t.productos.filter((p) => p.stock_fisico !== null && p.stock_fisico > p.stock_sistema).length;
+    return {
+      "Tienda": t.tiendaNombre,
+      "Código": t.tiendaCodigo,
+      "Auditoría": t.auditoriaNombre,
+      "Estado": t.estado,
+      "Total": t.productos.length,
+      "Contados": contados,
+      "Correctos": correctos,
+      "Faltantes": faltantes,
+      "Sobrantes": sobrantes,
+      "% Avance": t.productos.length > 0 ? `${Math.round((contados / t.productos.length) * 100)}%` : "0%",
+    };
+  });
+  const wsResumen = utils.json_to_sheet(resumen);
+  wsResumen["!cols"] = [
+    { wch: 22 }, { wch: 10 }, { wch: 25 }, { wch: 12 },
+    { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+  ];
+  utils.book_append_sheet(wb, wsResumen, "Resumen");
+
+  // Una hoja por tienda
+  for (const t of tiendas) {
+    if (t.productos.length === 0) continue;
+    const ws = utils.json_to_sheet(t.productos.map(productoSnapshotToRow));
+    ws["!cols"] = COL_WIDTHS;
+    // Nombre de hoja: máx 31 chars, sin caracteres inválidos
+    const sheetName = t.tiendaNombre.replace(/[[\]\\/:*?]/g, "").slice(0, 28);
+    utils.book_append_sheet(wb, ws, sheetName || t.tiendaCodigo.slice(0, 28));
+  }
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const fileName = `auditoria_consolidada_${fecha}.xlsx`;
+  await compartirWorkbook(wb, fileName, "Exportar auditoría consolidada");
 }

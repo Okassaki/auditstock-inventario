@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { obtenerProgresotienda, type ProductoSnapshot } from "@/utils/api";
+import { exportarExcelBoss } from "@/utils/excel";
 
 const BOSS_COLOR = "#8B5CF6";
 const BG = "#0D0A1E";
@@ -116,8 +118,28 @@ export default function ProductosScreen() {
   const [productos, setProductos] = useState<ProductoSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+
+  async function handleExportar() {
+    if (productos.length === 0) {
+      Alert.alert("Sin datos", "No hay productos para exportar.");
+      return;
+    }
+    try {
+      setExporting(true);
+      await exportarExcelBoss(
+        productos,
+        auditoriaNombre ?? "Auditoría",
+        tiendaNombre ?? codigo
+      );
+    } catch (e: any) {
+      Alert.alert("Error al exportar", e?.message ?? "Error desconocido");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const fetchProductos = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -163,8 +185,22 @@ export default function ProductosScreen() {
           <Text style={styles.headerTitle} numberOfLines={1}>{tiendaNombre ?? codigo}</Text>
           <Text style={styles.headerSub} numberOfLines={1}>{auditoriaNombre}</Text>
         </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchProductos(true)}>
+        <TouchableOpacity
+          style={styles.refreshBtn}
+          onPress={() => fetchProductos(true)}
+          disabled={refreshing}
+        >
           <Feather name="refresh-cw" size={18} color={BOSS_COLOR} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.exportBtn, exporting && styles.exportBtnDisabled]}
+          onPress={handleExportar}
+          disabled={exporting || productos.length === 0}
+        >
+          {exporting
+            ? <ActivityIndicator size="small" color={BOSS_COLOR} />
+            : <Feather name="download" size={18} color={productos.length > 0 ? BOSS_COLOR : TEXT_MUTED} />
+          }
         </TouchableOpacity>
       </View>
 
@@ -250,6 +286,8 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: TEXT },
   headerSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: TEXT_MUTED, marginTop: 2 },
   refreshBtn: { padding: 4 },
+  exportBtn: { padding: 4 },
+  exportBtnDisabled: { opacity: 0.4 },
   loadingText: { color: TEXT_SEC, fontFamily: "Inter_400Regular", fontSize: 14 },
   errorText: { color: DANGER, fontFamily: "Inter_400Regular", fontSize: 14, textAlign: "center" },
   retryBtn: {

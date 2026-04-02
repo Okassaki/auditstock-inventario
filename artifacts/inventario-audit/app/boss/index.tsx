@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { obtenerProgreso, type ProgresoGeneralItem } from "@/utils/api";
+import { exportarExcelConsolidado, type TiendaExportData } from "@/utils/excel";
 
 const BOSS_COLOR = "#8B5CF6";
 const BG = "#0D0A1E";
@@ -125,8 +127,57 @@ export default function DashboardScreen() {
   const [data, setData] = useState<ProgresoGeneralItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  async function handleExportarTodo() {
+    const conDatos = data.filter((d) => d.progresoActivo?.productosJson);
+    if (conDatos.length === 0) {
+      Alert.alert("Sin datos", "Ninguna tienda tiene datos de auditoría aún.");
+      return;
+    }
+    const sinFinalizar = data.filter(
+      (d) => d.progresoActivo && d.progresoActivo.estado === "activa"
+    );
+    const exportar = async () => {
+      try {
+        setExporting(true);
+        const tiendas: TiendaExportData[] = conDatos.map((d) => {
+          const p = d.progresoActivo!;
+          const productos = p.productosJson ? JSON.parse(p.productosJson) : [];
+          const estadoLabel =
+            p.estado === "activa" ? "En curso" :
+            p.estado === "completada" ? "Completada" : "Archivada";
+          return {
+            tiendaNombre: d.tienda.nombre,
+            tiendaCodigo: d.tienda.codigo,
+            auditoriaNombre: p.auditoriaNombre,
+            estado: estadoLabel,
+            productos,
+          };
+        });
+        await exportarExcelConsolidado(tiendas);
+      } catch (e: any) {
+        Alert.alert("Error al exportar", e?.message ?? "Error desconocido");
+      } finally {
+        setExporting(false);
+      }
+    };
+
+    if (sinFinalizar.length > 0) {
+      Alert.alert(
+        "Auditorías en curso",
+        `${sinFinalizar.length} tienda${sinFinalizar.length > 1 ? "s" : ""} todavía está${sinFinalizar.length > 1 ? "n" : ""} auditando. ¿Exportar igualmente con los datos actuales?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Exportar igual", onPress: exportar },
+        ]
+      );
+    } else {
+      await exportar();
+    }
+  }
 
   function irAProductos(item: ProgresoGeneralItem) {
     const p = item.progresoActivo;
@@ -180,6 +231,8 @@ export default function DashboardScreen() {
 
   const activas = data.filter((d) => d.progresoActivo?.estado === "activa").length;
   const sinAuditoria = data.filter((d) => !d.progresoActivo).length;
+  const conDatos = data.filter((d) => d.progresoActivo?.productosJson).length;
+  const todasFinalizadas = data.length > 0 && activas === 0 && sinAuditoria === 0 && conDatos === data.length;
 
   return (
     <View style={styles.container}>
@@ -191,11 +244,27 @@ export default function DashboardScreen() {
               {lastRefresh.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
             </Text>
           )}
+          <TouchableOpacity
+            onPress={handleExportarTodo}
+            style={[styles.exportBtn, (exporting || conDatos === 0) && { opacity: 0.4 }]}
+            disabled={exporting || conDatos === 0}
+          >
+            {exporting
+              ? <ActivityIndicator size="small" color={SUCCESS} />
+              : <Feather name="download" size={18} color={todasFinalizadas ? SUCCESS : BOSS_COLOR} />
+            }
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
             <Feather name="refresh-cw" size={18} color={BOSS_COLOR} />
           </TouchableOpacity>
         </View>
       </View>
+      {todasFinalizadas && (
+        <View style={styles.allDoneRow}>
+          <Feather name="check-circle" size={14} color={SUCCESS} />
+          <Text style={styles.allDoneText}>Todas las tiendas finalizaron — tocá ↓ para exportar todo</Text>
+        </View>
+      )}
 
       <View style={styles.summaryRow}>
         <View style={[styles.summaryBox, { borderColor: `${BOSS_COLOR}40` }]}>
@@ -260,6 +329,19 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
   lastRefreshText: { fontSize: 12, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
   refreshBtn: { padding: 6 },
+  exportBtn: { padding: 6 },
+  allDoneRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: `${SUCCESS}15`,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  allDoneText: { flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: SUCCESS },
   summaryRow: { flexDirection: "row", gap: 10, paddingHorizontal: 20, marginBottom: 12 },
   summaryBox: {
     flex: 1,
