@@ -103,3 +103,33 @@ export async function eliminarProgreso(
     { method: "DELETE" }
   );
 }
+
+export interface ExcelPendienteAPI {
+  nombreArchivo: string;
+  contenidoBase64: string;
+  subidoAt: string;
+}
+
+export async function subirExcelTienda(
+  codigo: string,
+  nombreArchivo: string,
+  contenidoBase64: string
+): Promise<void> {
+  await apiFetch(`/tiendas/${encodeURIComponent(codigo)}/excel`, {
+    method: "POST",
+    body: JSON.stringify({ nombreArchivo, contenidoBase64 }),
+  });
+}
+
+export async function obtenerExcelPendiente(codigo: string): Promise<ExcelPendienteAPI | null> {
+  try {
+    return await apiFetch<ExcelPendienteAPI>(`/tiendas/${encodeURIComponent(codigo)}/excel`);
+  } catch (e: any) {
+    if (e?.message?.includes("404") || e?.message?.includes("No hay")) return null;
+    throw e;
+  }
+}
+
+export async function eliminarExcelPendiente(codigo: string): Promise<void> {
+  await apiFetch(`/tiendas/${encodeURIComponent(codigo)}/excel`, { method: "DELETE" });
+}

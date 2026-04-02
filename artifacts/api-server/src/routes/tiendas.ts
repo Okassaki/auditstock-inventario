@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, tiendasTable, progresoAuditoriasTable, insertTiendaSchema } from "@workspace/db";
+import { db, tiendasTable, progresoAuditoriasTable, excelPendientesTable, insertTiendaSchema } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
@@ -199,6 +199,54 @@ router.get("/progreso", async (_req, res) => {
     res.json(resultado);
   } catch {
     res.status(500).json({ error: "Error al obtener progreso general" });
+  }
+});
+
+const excelUploadSchema = z.object({
+  nombreArchivo: z.string().min(1),
+  contenidoBase64: z.string().min(1),
+});
+
+router.post("/tiendas/:codigo/excel", async (req, res) => {
+  try {
+    const [tienda] = await db.select().from(tiendasTable).where(eq(tiendasTable.codigo, req.params.codigo)).limit(1);
+    if (!tienda) { res.status(404).json({ error: "Tienda no encontrada" }); return; }
+    const body = excelUploadSchema.parse(req.body);
+    await db.insert(excelPendientesTable)
+      .values({ tiendaCodigo: req.params.codigo, nombreArchivo: body.nombreArchivo, contenidoBase64: body.contenidoBase64 })
+      .onConflictDoUpdate({
+        target: excelPendientesTable.tiendaCodigo,
+        set: { nombreArchivo: body.nombreArchivo, contenidoBase64: body.contenidoBase64, subidoAt: new Date() },
+      });
+    res.json({ ok: true });
+  } catch (err: any) {
+    if (err?.name === "ZodError") { res.status(400).json({ error: "Datos inválidos" }); return; }
+    res.status(500).json({ error: "Error al guardar Excel" });
+  }
+});
+
+router.get("/tiendas/:codigo/excel", async (req, res) => {
+  try {
+    const [excel] = await db.select().from(excelPendientesTable)
+      .where(eq(excelPendientesTable.tiendaCodigo, req.params.codigo))
+      .limit(1);
+    if (!excel) { res.status(404).json({ error: "No hay Excel pendiente" }); return; }
+    res.json({
+      nombreArchivo: excel.nombreArchivo,
+      contenidoBase64: excel.contenidoBase64,
+      subidoAt: excel.subidoAt,
+    });
+  } catch {
+    res.status(500).json({ error: "Error al obtener Excel" });
+  }
+});
+
+router.delete("/tiendas/:codigo/excel", async (req, res) => {
+  try {
+    await db.delete(excelPendientesTable).where(eq(excelPendientesTable.tiendaCodigo, req.params.codigo));
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Error al eliminar Excel" });
   }
 });
 

@@ -1,4 +1,6 @@
 import { Feather } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as LegacyFS from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -21,6 +23,7 @@ import {
   editarTienda,
   eliminarTienda,
   obtenerTiendas,
+  subirExcelTienda,
   type TiendaAPI,
 } from "@/utils/api";
 
@@ -51,6 +54,7 @@ export default function TiendasScreen() {
   const [form, setForm] = useState<FormState>({ nombre: "", codigo: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingExcel, setUploadingExcel] = useState<string | null>(null);
 
   const fetchTiendas = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -110,6 +114,56 @@ export default function TiendasScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCargarExcel(tienda: TiendaAPI) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      let base64 = "";
+      let nombreArchivo = "";
+
+      if (Platform.OS === "web") {
+        // Web: usar input nativo
+        const archivo = await new Promise<File | null>((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = ".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+          let settled = false;
+          const settle = (val: File | null) => { if (!settled) { settled = true; resolve(val); } };
+          input.onchange = () => settle(input.files?.[0] ?? null);
+          window.addEventListener("focus", function onF() { window.removeEventListener("focus", onF); setTimeout(() => settle(null), 500); }, { once: true });
+          input.click();
+        });
+        if (!archivo) return;
+        nombreArchivo = archivo.name;
+        const ab = await archivo.arrayBuffer();
+        const bytes = new Uint8Array(ab);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        base64 = btoa(binary);
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "*/*"],
+          copyToCacheDirectory: true,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        const asset = result.assets[0];
+        nombreArchivo = asset.name ?? "archivo.xlsx";
+        base64 = await LegacyFS.readAsStringAsync(asset.uri, {
+          encoding: LegacyFS.EncodingType.Base64,
+        });
+      }
+
+      setUploadingExcel(tienda.codigo);
+      await subirExcelTienda(tienda.codigo, nombreArchivo, base64);
+      setUploadingExcel(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Excel enviado", `"${nombreArchivo}" fue enviado a ${tienda.nombre}.\n\nLa tienda lo verá al abrir la app.`);
+    } catch (e: any) {
+      setUploadingExcel(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error al subir", e?.message ?? "No se pudo enviar el Excel");
     }
   }
 
@@ -179,6 +233,16 @@ export default function TiendasScreen() {
               <View style={styles.cardActions}>
                 <TouchableOpacity style={styles.actionBtn} onPress={() => abrirEditar(item)}>
                   <Feather name="edit-2" size={16} color={BOSS_COLOR} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { borderColor: "#22C55E" + "50", backgroundColor: "#22C55E" + "15" }]}
+                  onPress={() => handleCargarExcel(item)}
+                  disabled={uploadingExcel === item.codigo}
+                >
+                  {uploadingExcel === item.codigo
+                    ? <ActivityIndicator size="small" color="#22C55E" />
+                    : <Feather name="upload" size={16} color="#22C55E" />
+                  }
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.actionBtn, styles.actionBtnDanger]} onPress={() => handleEliminar(item)}>
                   <Feather name="trash-2" size={16} color={DANGER} />

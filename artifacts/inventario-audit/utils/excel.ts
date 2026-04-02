@@ -45,6 +45,60 @@ async function leerArchivoComoArray(uri: string, file?: File): Promise<Uint8Arra
   }
 }
 
+/** Parsea un Excel a partir de base64 (para descarga automática desde el servidor) */
+export async function parsearExcelDesdeBase64(base64: string): Promise<{
+  productos: ExcelProducto[];
+  errores: string[];
+}> {
+  const uint8Array = new Uint8Array(Buffer.from(base64, "base64"));
+  const workbook = read(uint8Array, { type: "array" });
+  const errores: string[] = [];
+  const productos: ExcelProducto[] = [];
+
+  if (workbook.SheetNames.length === 0) {
+    return { productos, errores: ["El archivo no contiene hojas."] };
+  }
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const sheetRef = sheet["!ref"];
+    if (!sheetRef) continue;
+    const sheetRange = utils.decode_range(sheetRef);
+    const ncols = sheetRange.e.c + 1;
+    const getCell = (r: number, c: number): unknown => {
+      const cell = sheet[utils.encode_cell({ r, c })];
+      return cell ? cell.v ?? "" : "";
+    };
+    const col0h = String(getCell(0, 0)).trim();
+    const col2h = String(getCell(0, 2)).trim();
+    const esEncabezado = isNaN(Number(col0h)) || isNaN(Number(col2h));
+    const inicio = esEncabezado ? 1 : 0;
+    const numGrupos = Math.max(1, Math.floor(ncols / 3));
+
+    for (let i = inicio; i <= sheetRange.e.r; i++) {
+      for (let g = 0; g < numGrupos; g++) {
+        const offset = g * 3;
+        const codigo = String(getCell(i, offset) ?? "").trim();
+        const nombre = String(getCell(i, offset + 1) ?? "").trim();
+        const stockRaw = getCell(i, offset + 2);
+        if (!codigo && !nombre) continue;
+        if (!codigo) continue;
+        const stockStr = String(stockRaw ?? "").trim();
+        const stock = stockStr === "" ? 0 : Number(stockStr.replace(/[^0-9.-]/g, ""));
+        if (stockStr !== "" && isNaN(stock)) continue;
+        const imeisRaw = String(getCell(i, offset + 3) ?? "").trim();
+        productos.push({
+          codigo,
+          nombre: nombre || codigo,
+          stock_sistema: isNaN(stock) ? 0 : Math.round(stock),
+          imeis_sistema: imeisRaw || undefined,
+        });
+      }
+    }
+  }
+  return { productos, errores };
+}
+
 /**
  * Parsea un archivo Excel.
  * Lee TODAS las hojas, TODAS las filas y TODAS las columnas.

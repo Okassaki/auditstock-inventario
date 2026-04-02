@@ -20,6 +20,14 @@ export const progresoAuditoriasTable = pgTable("progreso_auditorias", {
   actualizadoAt: timestamp("actualizado_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const excelPendientesTable = pgTable("excel_pendientes", {
+  id: serial("id").primaryKey(),
+  tiendaCodigo: text("tienda_codigo").notNull().unique().references(() => tiendasTable.codigo, { onDelete: "cascade" }),
+  nombreArchivo: text("nombre_archivo").notNull(),
+  contenidoBase64: text("contenido_base64").notNull(),
+  subidoAt: timestamp("subido_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertTiendaSchema = createInsertSchema(tiendasTable).omit({ id: true, creadoAt: true });
 export type InsertTienda = z.infer<typeof insertTiendaSchema>;
 export type Tienda = typeof tiendasTable.$inferSelect;

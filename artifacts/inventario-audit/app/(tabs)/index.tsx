@@ -21,14 +21,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useDatabase, type Auditoria } from "@/context/DatabaseContext";
-import { parsearExcel } from "@/utils/excel";
+import { parsearExcel, parsearExcelDesdeBase64 } from "@/utils/excel";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useStoreConfig } from "@/context/StoreConfigContext";
+import { obtenerExcelPendiente, eliminarExcelPendiente } from "@/utils/api";
 
 export default function InicioScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const C = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
+  const { storeConfig } = useStoreConfig();
 
   const {
     cargarAuditorias,
@@ -58,18 +61,74 @@ export default function InicioScreen() {
   const [importProgress, setImportProgress] = useState("");
   const [auditoriaAEliminar, setAuditoriaAEliminar] = useState<Auditoria | null>(null);
   const [resultModal, setResultModal] = useState<{ titulo: string; mensaje: string; audId?: number } | null>(null);
+  const [excelPendiente, setExcelPendiente] = useState<{ nombreArchivo: string; contenidoBase64: string } | null>(null);
+  const [importandoServidor, setImportandoServidor] = useState(false);
 
   const cargar = useCallback(async () => {
     const list = await cargarAuditorias();
     setAuditorias(list);
   }, [cargarAuditorias]);
 
+  const verificarExcelPendiente = useCallback(async () => {
+    if (!storeConfig?.codigo) return;
+    try {
+      const data = await obtenerExcelPendiente(storeConfig.codigo);
+      setExcelPendiente(data);
+    } catch {
+      // Sin conexión o sin pendiente
+    }
+  }, [storeConfig?.codigo]);
+
   // Recargar la lista cada vez que el usuario vuelve a esta pestaña
   useFocusEffect(
     useCallback(() => {
       cargar();
-    }, [cargar])
+      verificarExcelPendiente();
+    }, [cargar, verificarExcelPendiente])
   );
+
+  const handleImportarDesdeServidor = async () => {
+    if (!excelPendiente || !storeConfig?.codigo) return;
+    setImportandoServidor(true);
+    try {
+      const { productos, errores } = await parsearExcelDesdeBase64(excelPendiente.contenidoBase64);
+      if (productos.length === 0) {
+        setImportandoServidor(false);
+        Alert.alert(
+          "Sin datos",
+          errores.length > 0 ? errores.join("\n") : "El archivo no contiene productos válidos."
+        );
+        return;
+      }
+      // Crear una nueva auditoría para este Excel
+      const nombreAud = `Excel ${excelPendiente.nombreArchivo.replace(/\.[^.]+$/, "")} ${new Date().toLocaleDateString("es")}`;
+      const audId = await crearAuditoria(nombreAud);
+      if (!audId) throw new Error("No se pudo crear la auditoría");
+      const { insertados, duplicados, errores: errImp } = await importarProductos(
+        productos.map((p) => ({
+          codigo: p.codigo,
+          nombre: p.nombre,
+          stock_sistema: p.stock_sistema,
+          imeis_sistema: p.imeis_sistema ?? null,
+          comentario: null,
+        })),
+        audId,
+        false
+      );
+      // Eliminar el pendiente del servidor
+      try { await eliminarExcelPendiente(storeConfig.codigo); } catch {}
+      setExcelPendiente(null);
+      setImportandoServidor(false);
+      await cargar();
+      let msg = `✅ Excel importado correctamente\n\n${productos.length} leídos, ${insertados} guardados`;
+      if (duplicados > 0) msg += `, ${duplicados} duplicados ignorados`;
+      if (errImp.length > 0) msg += `\n\nAdvertencias:\n${errImp.slice(0, 3).join("\n")}`;
+      Alert.alert("Excel importado", msg);
+    } catch (e: any) {
+      setImportandoServidor(false);
+      Alert.alert("Error", e?.message ?? "No se pudo importar el Excel");
+    }
+  };
 
   const handleCrear = async () => {
     const nombre = nombreNueva.trim();
@@ -308,6 +367,40 @@ export default function InicioScreen() {
           <Feather name="plus" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {excelPendiente && (
+        <View style={[styles.excelBanner, { backgroundColor: "#8B5CF6" + "22", borderColor: "#8B5CF6" + "60" }]}>
+          <View style={styles.excelBannerLeft}>
+            <Feather name="download" size={18} color="#8B5CF6" />
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <Text style={[styles.excelBannerTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                El jefe cargó un nuevo Excel
+              </Text>
+              <Text style={[styles.excelBannerSub, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
+                {excelPendiente.nombreArchivo}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.excelBannerActions}>
+            <TouchableOpacity
+              onPress={handleImportarDesdeServidor}
+              disabled={importandoServidor}
+              style={[styles.excelImportBtn, { backgroundColor: "#8B5CF6" }]}
+            >
+              {importandoServidor
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={{ color: "#fff", fontFamily: "Inter_700Bold", fontSize: 13 }}>Importar</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setExcelPendiente(null)}
+              style={styles.excelDismissBtn}
+            >
+              <Feather name="x" size={16} color={C.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {auditoriaActual && (
         <View style={[styles.activeCard, { backgroundColor: C.primary + "18", borderColor: C.primary + "40" }]}>
@@ -873,6 +966,29 @@ const styles = StyleSheet.create({
   },
   activeLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   activeDot: { width: 8, height: 8, borderRadius: 4 },
+  excelBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  excelBannerLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  excelBannerTitle: { fontSize: 13, lineHeight: 16 },
+  excelBannerSub: { fontSize: 11, marginTop: 2 },
+  excelBannerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  excelImportBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  excelDismissBtn: {
+    padding: 6,
+  },
   activeLabel: { fontSize: 11 },
   activeName: { fontSize: 15, marginTop: 1 },
   activeRight: { alignItems: "flex-end" },
