@@ -10,14 +10,17 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useStoreConfig } from "@/context/StoreConfigContext";
 import { verificarTienda } from "@/utils/api";
 
 const C = Colors.dark;
+const BOSS_COLOR = "#8B5CF6";
 
 export default function SetupScreen() {
   const { guardarConfig } = useStoreConfig();
+  const router = useRouter();
   const [codigo, setCodigo] = useState("");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +103,15 @@ export default function SetupScreen() {
           Si no tienes un código, contacta al administrador del sistema.
         </Text>
       </View>
+
+      <TouchableOpacity
+        style={styles.bossBtn}
+        onPress={() => router.push("/boss-login")}
+        activeOpacity={0.7}
+      >
+        <Feather name="shield" size={14} color={BOSS_COLOR} />
+        <Text style={styles.bossBtnText}>Modo Jefe</Text>
+      </TouchableOpacity>
     </KeyboardAvoidingView>
   );
 }
@@ -200,5 +212,19 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     textAlign: "center",
     lineHeight: 18,
+  },
+  bossBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 18,
+    borderTopWidth: 1,
+    borderTopColor: C.surfaceBorder,
+  },
+  bossBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    color: "#8B5CF6",
   },
 });

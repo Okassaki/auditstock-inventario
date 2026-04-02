@@ -26,6 +26,23 @@ export interface TiendaAPI {
   creadoAt: string;
 }
 
+export interface ProgresoAPI {
+  id: number;
+  tiendaCodigo: string;
+  auditoriaId: string;
+  auditoriaNombre: string;
+  totalProductos: number;
+  totalContados: number;
+  estado: "activa" | "completada" | "archivada";
+  actualizadoAt: string;
+}
+
+export interface ProgresoGeneralItem {
+  tienda: TiendaAPI;
+  progresoActivo: ProgresoAPI | null;
+  totalAuditorias: number;
+}
+
 export async function verificarTienda(codigo: string): Promise<TiendaAPI> {
   return apiFetch<TiendaAPI>(`/tiendas/${encodeURIComponent(codigo)}`);
 }
@@ -42,4 +59,47 @@ export async function reportarProgreso(
     method: "POST",
     body: JSON.stringify({ auditoriaId, auditoriaNombre, totalProductos, totalContados, estado }),
   });
+}
+
+export async function obtenerProgreso(): Promise<ProgresoGeneralItem[]> {
+  return apiFetch<ProgresoGeneralItem[]>("/progreso");
+}
+
+export async function obtenerTiendas(): Promise<TiendaAPI[]> {
+  return apiFetch<TiendaAPI[]>("/tiendas");
+}
+
+export async function crearTienda(codigo: string, nombre: string): Promise<TiendaAPI> {
+  return apiFetch<TiendaAPI>("/tiendas", {
+    method: "POST",
+    body: JSON.stringify({ codigo, nombre }),
+  });
+}
+
+export async function editarTienda(
+  codigoActual: string,
+  body: { codigo?: string; nombre?: string }
+): Promise<TiendaAPI> {
+  return apiFetch<TiendaAPI>(`/tiendas/${encodeURIComponent(codigoActual)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function eliminarTienda(codigo: string): Promise<void> {
+  await apiFetch(`/tiendas/${encodeURIComponent(codigo)}`, { method: "DELETE" });
+}
+
+export async function obtenerProgresotienda(codigo: string): Promise<ProgresoAPI[]> {
+  return apiFetch<ProgresoAPI[]>(`/tiendas/${encodeURIComponent(codigo)}/progreso`);
+}
+
+export async function eliminarProgreso(
+  codigoTienda: string,
+  auditoriaId: string
+): Promise<void> {
+  await apiFetch(
+    `/tiendas/${encodeURIComponent(codigoTienda)}/progreso/${encodeURIComponent(auditoriaId)}`,
+    { method: "DELETE" }
+  );
 }
