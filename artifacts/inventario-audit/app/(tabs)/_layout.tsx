@@ -184,10 +184,12 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   firma: {
     position: "absolute",
-    bottom: 62,
-    right: 14,
+    bottom: 64,
+    left: 0,
+    right: 0,
+    textAlign: "center",
     fontSize: 9,
-    color: "rgba(255,255,255,0.25)",
+    color: "rgba(255,255,255,0.18)",
     fontFamily: "Inter_400Regular",
     letterSpacing: 0.3,
   },

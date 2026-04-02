@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
-import { Platform, Text, View } from "react-native";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -93,27 +93,6 @@ export default function RootLayout() {
                 <GestureHandlerRootView style={{ flex: 1 }}>
                   <KeyboardProvider>
                     <RootLayoutNav />
-                    {/* Firma */}
-                    <View
-                      pointerEvents="none"
-                      style={{
-                        position: "absolute",
-                        bottom: 62,
-                        right: 14,
-                        zIndex: 9999,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 9,
-                          color: "rgba(255,255,255,0.18)",
-                          fontFamily: isWeb ? undefined : "Inter_400Regular",
-                          letterSpacing: 0.5,
-                        }}
-                      >
-                        Daniel E. Sanchez A.
-                      </Text>
-                    </View>
                   </KeyboardProvider>
                 </GestureHandlerRootView>
               </DatabaseProvider>
