@@ -35,16 +35,26 @@ function RootLayoutNav() {
   useEffect(() => {
     if (storeLoading || bossLoading) return;
 
-    const inBoss = segments[0] === "boss" || segments[0] === "boss-login";
-    const inSetup = segments[0] === "setup";
-    const inTabs = segments[0] === "(tabs)";
+    const inBossMain  = segments[0] === "boss";
+    const inBossLogin = segments[0] === "boss-login";
+    const inSetup     = segments[0] === "setup";
 
     if (bossAuthenticated) {
-      if (!inBoss) router.replace("/boss");
+      if (!inBossMain) router.replace("/boss");
       return;
     }
 
-    if (!storeConfig && !inSetup && !inBoss) {
+    // Boss cerró sesión mientras estaba en las pantallas del jefe → redirigir afuera
+    if (inBossMain) {
+      if (storeConfig) router.replace("/(tabs)");
+      else router.replace("/setup");
+      return;
+    }
+
+    // En boss-login sin autenticar: dejar que el usuario ingrese el PIN
+    if (inBossLogin) return;
+
+    if (!storeConfig && !inSetup) {
       router.replace("/setup");
     } else if (storeConfig && inSetup) {
       router.replace("/(tabs)");

@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { Tabs, useRouter } from "expo-router";
+import { Tabs } from "expo-router";
 import React from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,7 +25,6 @@ export default function BossLayout() {
         style: "destructive",
         onPress: () => {
           logout();
-          router.replace("/setup");
         },
       },
     ]);
