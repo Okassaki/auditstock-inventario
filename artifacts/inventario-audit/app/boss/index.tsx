@@ -400,5 +400,5 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", paddingVertical: 60, gap: 12 },
   emptyText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: TEXT_MUTED },
   emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
-  autoRefreshNote: { textAlign: "center", fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED, paddingBottom: 12 },
+  autoRefreshNote: { textAlign: "center", fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED, paddingVertical: 6, marginBottom: 22 },
 });
