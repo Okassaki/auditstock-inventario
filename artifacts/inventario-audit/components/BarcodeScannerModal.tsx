@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useState } from "react";
+import { Audio } from "expo-av";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -17,6 +18,35 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+
+function useScanBeep() {
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+    Audio.Sound.createAsync(
+      require("@/assets/sounds/beep.wav"),
+      { shouldPlay: false, volume: 1.0 }
+    ).then(({ sound }) => {
+      if (mounted) soundRef.current = sound;
+    }).catch(() => {});
+    return () => {
+      mounted = false;
+      soundRef.current?.unloadAsync().catch(() => {});
+    };
+  }, []);
+
+  return async () => {
+    try {
+      const s = soundRef.current;
+      if (!s) return;
+      await s.setPositionAsync(0);
+      await s.playAsync();
+    } catch {
+    }
+  };
+}
 
 interface BarcodeScannerModalProps {
   visible: boolean;
@@ -117,6 +147,8 @@ function NativeScannerModal({
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const playBeep = useScanBeep();
+
   // Pedir permiso automáticamente cuando el modal se abre
   useEffect(() => {
     if (visible && permission !== null && !permission.granted && permission.canAskAgain) {
@@ -134,6 +166,7 @@ function NativeScannerModal({
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
+    playBeep();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onScan(data);
     setTimeout(() => setScanned(false), 1500);
