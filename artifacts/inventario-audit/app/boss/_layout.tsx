@@ -15,6 +15,7 @@ const TEXT_MUTED = "#6B5FA8";
 export default function BossLayout() {
   const { logout } = useBossConfig();
   const insets = useSafeAreaInsets();
+  const firmaBottom = 56 + insets.bottom + 6;
 
   function handleLogout() {
     Alert.alert("Salir del Modo Jefe", "¿Confirmas que querés salir?", [
@@ -82,6 +83,7 @@ export default function BossLayout() {
           options={{ href: null, headerShown: false }}
         />
       </Tabs>
+      <Text style={[styles.firma, { bottom: firmaBottom }]} pointerEvents="none">Daniel E. Sanchez A.</Text>
     </View>
   );
 }
@@ -112,4 +114,14 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, fontFamily: "Inter_700Bold", color: BOSS_COLOR, letterSpacing: 1 },
   logoutBtn: { flexDirection: "row", alignItems: "center", gap: 6, padding: 6 },
   logoutText: { fontSize: 14, fontFamily: "Inter_500Medium", color: TEXT_MUTED },
+  firma: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    textAlign: "center",
+    fontSize: 9,
+    color: "rgba(255,255,255,0.18)",
+    fontFamily: "Inter_400Regular",
+    letterSpacing: 0.3,
+  },
 });
