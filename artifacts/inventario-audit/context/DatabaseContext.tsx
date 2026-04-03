@@ -301,7 +301,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
     // Reportar progreso al servidor en segundo plano (silencioso si no hay red)
     const cfg = storeConfigRef.current;
-    if (cfg && auditoriaActual.estado !== "archivada") {
+    if (cfg) {
       const snapshot = prods.map((p) => ({
         codigo: p.codigo,
         nombre: p.nombre,
@@ -578,21 +578,62 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
   const archivarAuditoria = useCallback(async (id: number) => {
     const now = new Date().toISOString();
+    let prods: ProductoInventario[] = [];
+    let auditoriaNombre = String(id);
+    let totalProductos = 0;
+    let totalContados = 0;
+
     if (dbRef.current) {
+      const aud = await dbRef.current.getFirstAsync<Auditoria>(
+        "SELECT * FROM auditorias WHERE id = ?", [id]
+      );
+      if (aud) auditoriaNombre = aud.nombre;
       await dbRef.current.runAsync(
         "UPDATE auditorias SET estado = 'archivada', fecha_modificacion = ? WHERE id = ?",
         [now, id]
       );
+      prods = await dbRef.current.getAllAsync<ProductoInventario>(
+        "SELECT * FROM productos WHERE auditoria_id = ?", [id]
+      );
+      totalProductos = prods.length;
+      totalContados = prods.filter((p) => p.stock_fisico !== null).length;
     } else {
+      const aud = storeRef.current.auds.find((a) => a.id === id);
+      if (aud) auditoriaNombre = aud.nombre;
       storeRef.current.auds = storeRef.current.auds.map((a) =>
         a.id === id ? { ...a, estado: "archivada" as const, fecha_modificacion: now } : a
       );
       await saveAuditorias(storeRef.current.auds);
+      prods = asGetProductosByAuditoria(id);
+      totalProductos = prods.length;
+      totalContados = prods.filter((p) => p.stock_fisico !== null).length;
     }
+
     setAuditoriaActual((prev) =>
       prev?.id === id ? { ...prev, estado: "archivada" } : prev
     );
-  }, []);
+
+    // Sincronizar estado final con el servidor
+    const cfg = storeConfigRef.current;
+    if (cfg) {
+      const snapshot = prods.map((p) => ({
+        codigo: p.codigo,
+        nombre: p.nombre,
+        stock_sistema: p.stock_sistema,
+        stock_fisico: p.stock_fisico,
+        comentario: p.comentario,
+      }));
+      reportarProgreso(
+        cfg.codigo,
+        String(id),
+        auditoriaNombre,
+        totalProductos,
+        totalContados,
+        "archivada",
+        snapshot
+      ).catch(() => {});
+    }
+  }, [asGetProductosByAuditoria]);
 
   const limpiarAuditoriaActual = useCallback(() => {
     setAuditoriaActual(null);
