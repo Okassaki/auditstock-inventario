@@ -69,7 +69,7 @@ const badge = StyleSheet.create({
   text: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
 });
 
-function TiendaCard({ item, onPress }: { item: ProgresoGeneralItem; onPress?: () => void }) {
+function TiendaCard({ item, onPress }: { item: ProgresoGeneralItem; onPress: () => void }) {
   const p = item.progresoActivo;
   const porcentaje = pct(item);
   const color = estadoColor(item);
@@ -78,13 +78,11 @@ function TiendaCard({ item, onPress }: { item: ProgresoGeneralItem; onPress?: ()
     ? new Date(p.actualizadoAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
     : null;
 
-  const hasProductos = !!(p?.productosJson);
-
   return (
     <TouchableOpacity
       style={[styles.card, { borderLeftColor: color }]}
-      onPress={hasProductos ? onPress : undefined}
-      activeOpacity={hasProductos ? 0.75 : 1}
+      onPress={onPress}
+      activeOpacity={0.75}
     >
       <View style={styles.cardTop}>
         <View style={styles.cardLeft}>
@@ -107,17 +105,18 @@ function TiendaCard({ item, onPress }: { item: ProgresoGeneralItem; onPress?: ()
             <Text style={styles.statText}>{p.totalContados} / {p.totalProductos} productos</Text>
             {lastUpdate && <Text style={styles.timeText}>Actualizado {lastUpdate}</Text>}
           </View>
-          {hasProductos && (
-            <View style={styles.verProductosRow}>
-              <Feather name="list" size={12} color={BOSS_COLOR} />
-              <Text style={styles.verProductosText}>Ver productos y comentarios</Text>
-              <Feather name="chevron-right" size={12} color={BOSS_COLOR} />
-            </View>
-          )}
         </>
       ) : (
-        <Text style={styles.sinAuditoria}>No hay auditoría activa · {item.totalAuditorias} historial</Text>
+        <Text style={styles.sinAuditoria}>Sin auditorías registradas</Text>
       )}
+
+      <View style={styles.verAuditoriasRow}>
+        <Feather name="clock" size={12} color={BOSS_COLOR} />
+        <Text style={styles.verAuditoriasText}>
+          Ver {item.totalAuditorias} auditoría{item.totalAuditorias !== 1 ? "s" : ""} (activas + archivadas)
+        </Text>
+        <Feather name="chevron-right" size={12} color={BOSS_COLOR} />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -179,16 +178,12 @@ export default function DashboardScreen() {
     }
   }
 
-  function irAProductos(item: ProgresoGeneralItem) {
-    const p = item.progresoActivo;
-    if (!p) return;
+  function irATienda(item: ProgresoGeneralItem) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({
-      pathname: "/boss/productos",
+      pathname: "/boss/tienda",
       params: {
         codigo: item.tienda.codigo,
-        auditoriaId: p.auditoriaId,
-        auditoriaNombre: p.auditoriaNombre,
         tiendaNombre: item.tienda.nombre,
       },
     });
@@ -291,7 +286,7 @@ export default function DashboardScreen() {
       <FlatList
         data={data}
         keyExtractor={(item) => item.tienda.codigo}
-        renderItem={({ item }) => <TiendaCard item={item} onPress={() => irAProductos(item)} />}
+        renderItem={({ item }) => <TiendaCard item={item} onPress={() => irATienda(item)} />}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl
@@ -389,7 +384,7 @@ const styles = StyleSheet.create({
   statText: { fontSize: 12, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
   timeText: { fontSize: 11, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
   sinAuditoria: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED },
-  verProductosRow: {
+  verAuditoriasRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -398,7 +393,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  verProductosText: { flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: BOSS_COLOR },
+  verAuditoriasText: { flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: BOSS_COLOR },
   empty: { alignItems: "center", paddingVertical: 60, gap: 12 },
   emptyText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: TEXT_MUTED },
   emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED },

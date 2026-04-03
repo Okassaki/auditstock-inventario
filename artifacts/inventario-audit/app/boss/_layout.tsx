@@ -74,6 +74,10 @@ export default function BossLayout() {
           }}
         />
         <Tabs.Screen
+          name="tienda"
+          options={{ href: null, headerShown: false }}
+        />
+        <Tabs.Screen
           name="productos"
           options={{ href: null, headerShown: false }}
         />
