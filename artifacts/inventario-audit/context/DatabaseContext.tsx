@@ -155,6 +155,57 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     initDB();
   }, []);
 
+  // Al iniciar, sincronizar en silencio todas las auditorías archivadas/completadas
+  // para que el modo boss las vea aunque nunca se hayan enviado antes
+  useEffect(() => {
+    if (isLoading || !storeConfig) return;
+    const timer = setTimeout(async () => {
+      const cfg = storeConfigRef.current;
+      if (!cfg) return;
+      try {
+        let auditorias: Auditoria[] = [];
+        if (dbRef.current) {
+          auditorias = await dbRef.current.getAllAsync<Auditoria>(
+            "SELECT * FROM auditorias WHERE estado IN ('archivada', 'completada')"
+          );
+        } else {
+          auditorias = storeRef.current.auds.filter(
+            (a) => a.estado === "archivada" || a.estado === "completada"
+          );
+        }
+        for (const aud of auditorias) {
+          let prods: ProductoInventario[] = [];
+          if (dbRef.current) {
+            prods = await dbRef.current.getAllAsync<ProductoInventario>(
+              "SELECT * FROM productos WHERE auditoria_id = ?", [aud.id]
+            );
+          } else {
+            prods = storeRef.current.prods.filter((p) => p.auditoria_id === aud.id);
+          }
+          const snapshot = prods.map((p) => ({
+            codigo: p.codigo,
+            nombre: p.nombre,
+            stock_sistema: p.stock_sistema,
+            stock_fisico: p.stock_fisico,
+            comentario: p.comentario,
+          }));
+          await reportarProgreso(
+            cfg.codigo,
+            String(aud.id),
+            aud.nombre,
+            prods.length,
+            prods.filter((p) => p.stock_fisico !== null).length,
+            aud.estado,
+            snapshot
+          ).catch(() => {});
+        }
+      } catch {
+        // Silencioso — sin red o error inesperado
+      }
+    }, 4000); // Esperar 4s para que la app cargue completamente
+    return () => clearTimeout(timer);
+  }, [isLoading, storeConfig]);
+
   async function initDB() {
     try {
       if (isWeb) {
