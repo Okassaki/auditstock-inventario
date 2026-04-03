@@ -133,7 +133,10 @@ export default function DashboardScreen() {
   async function handleExportarTodo() {
     const conDatos = data.filter((d) => d.progresoActivo?.productosJson);
     if (conDatos.length === 0) {
-      Alert.alert("Sin datos", "Ninguna tienda tiene datos de auditoría aún.");
+      Alert.alert(
+        "Sin datos para exportar",
+        "Ninguna tienda envió datos de productos aún.\n\nLos datos se sincronizan automáticamente cuando la tienda tiene conexión y una auditoría activa."
+      );
       return;
     }
     const sinFinalizar = data.filter(
@@ -241,8 +244,8 @@ export default function DashboardScreen() {
           )}
           <TouchableOpacity
             onPress={handleExportarTodo}
-            style={[styles.exportBtn, (exporting || conDatos === 0) && { opacity: 0.4 }]}
-            disabled={exporting || conDatos === 0}
+            style={[styles.exportBtn, exporting && { opacity: 0.4 }]}
+            disabled={exporting}
           >
             {exporting
               ? <ActivityIndicator size="small" color={SUCCESS} />
