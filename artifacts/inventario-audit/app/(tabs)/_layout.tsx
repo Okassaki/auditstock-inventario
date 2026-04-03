@@ -49,9 +49,6 @@ function StoreBanner() {
       <Feather name="map-pin" size={11} color={C.primary} />
       <Text style={bannerStyles.text} numberOfLines={1}>{storeConfig.nombre}</Text>
       <Text style={bannerStyles.code}>{storeConfig.codigo}</Text>
-      <View style={bannerStyles.versionBadge}>
-        <Text style={bannerStyles.versionText}>v1.1</Text>
-      </View>
       <TouchableOpacity
         onPress={() => router.push("/boss-login")}
         style={bannerStyles.bossBtn}
@@ -94,18 +91,6 @@ const bannerStyles = StyleSheet.create({
   bossBtn: {
     padding: 2,
     marginLeft: 4,
-  },
-  versionBadge: {
-    backgroundColor: "#00C896",
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  versionText: {
-    fontSize: 9,
-    fontFamily: "Inter_700Bold",
-    color: "#000",
-    letterSpacing: 0.5,
   },
 });
 
