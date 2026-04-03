@@ -39,7 +39,16 @@
     "assetBundlePatterns": [
       "assets/**"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/82653458-4336-45d4-9b1d-a3c6410411ca",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "plugins": [
+      "expo-updates",
       [
         "expo-router",
         {
