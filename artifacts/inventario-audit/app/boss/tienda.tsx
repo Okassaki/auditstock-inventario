@@ -166,9 +166,9 @@ export default function TiendaScreen() {
   const [error, setError] = useState<string | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (manual = false) => {
+  const fetchData = useCallback(async (manual = false, attempt = 0) => {
     if (manual) setRefreshing(true);
-    setError(null);
+    if (attempt === 0) setError(null);
     try {
       const data = await obtenerProgresotienda(codigo);
       const ordenado = [...data].sort((a, b) => {
@@ -177,8 +177,17 @@ export default function TiendaScreen() {
         return new Date(b.actualizadoAt).getTime() - new Date(a.actualizadoAt).getTime();
       });
       setProgresos(ordenado);
+      setError(null);
     } catch (e: any) {
-      setError(e?.message ?? "Error de conexión");
+      const msg: string = e?.message ?? "Error de conexión";
+      const isTransient = msg.includes("404") || msg.includes("conexión") || msg.includes("Network");
+      if (isTransient && attempt < 3) {
+        const delay = (attempt + 1) * 3000;
+        setError(`Reconectando... (${attempt + 1}/3)`);
+        setTimeout(() => fetchData(false, attempt + 1), delay);
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
       setRefreshing(false);

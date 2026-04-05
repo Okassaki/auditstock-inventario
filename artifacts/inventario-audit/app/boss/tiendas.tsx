@@ -56,14 +56,23 @@ export default function TiendasScreen() {
   const [saving, setSaving] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState<string | null>(null);
 
-  const fetchTiendas = useCallback(async (manual = false) => {
+  const fetchTiendas = useCallback(async (manual = false, attempt = 0) => {
     if (manual) setRefreshing(true);
-    setError(null);
+    if (attempt === 0) setError(null);
     try {
       const result = await obtenerTiendas();
       setTiendas(result);
+      setError(null);
     } catch (e: any) {
-      setError(e?.message ?? "Error de conexión");
+      const msg: string = e?.message ?? "Error de conexión";
+      const isTransient = msg.includes("404") || msg.includes("conexión") || msg.includes("Network");
+      if (isTransient && attempt < 3) {
+        const delay = (attempt + 1) * 3000;
+        setError(`Reconectando... (${attempt + 1}/3)`);
+        setTimeout(() => fetchTiendas(false, attempt + 1), delay);
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
       setRefreshing(false);

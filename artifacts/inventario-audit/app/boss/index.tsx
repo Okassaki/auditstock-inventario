@@ -192,15 +192,24 @@ export default function DashboardScreen() {
     });
   }
 
-  const fetchData = useCallback(async (isManual = false) => {
+  const fetchData = useCallback(async (isManual = false, attempt = 0) => {
     if (isManual) setRefreshing(true);
-    setError(null);
+    if (attempt === 0) setError(null);
     try {
       const result = await obtenerProgreso();
       setData(result);
       setLastRefresh(new Date());
+      setError(null);
     } catch (e: any) {
-      setError(e?.message ?? "Error de conexión");
+      const msg: string = e?.message ?? "Error de conexión";
+      const isTransient = msg.includes("404") || msg.includes("conexión") || msg.includes("Network");
+      if (isTransient && attempt < 3) {
+        const delay = (attempt + 1) * 3000;
+        setError(`Reconectando... (${attempt + 1}/3)`);
+        setTimeout(() => fetchData(false, attempt + 1), delay);
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
       setRefreshing(false);
