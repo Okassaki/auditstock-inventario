@@ -23,7 +23,7 @@
     },
     "android": {
       "package": "com.auditstock.inventario",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
@@ -71,7 +71,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "La app necesita la cámara para escanear códigos de barras."
+          "cameraPermission": "La app necesita la cámara para escanear códigos de barras y video llamadas."
         }
       ],
       [
@@ -93,7 +93,8 @@
         {
           "contactsPermission": "La app necesita acceso a tus contactos para enviarlos en el chat."
         }
-      ]
+      ],
+      "./plugins/withKeyboardController"
     ],
     "experiments": {
       "typedRoutes": true

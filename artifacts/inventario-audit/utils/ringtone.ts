@@ -1,19 +1,19 @@
-import { Audio } from "expo-av";
+import { Audio, type AVPlaybackSource } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type CallTone = "ring1" | "ring2" | "ring3" | "silent";
 export type MsgTone = "ping" | "chime" | "pop" | "silent";
 
-const CALL_SOURCES: Record<string, ReturnType<typeof require>> = {
-  ring1: require("../assets/sounds/ring1.wav"),
-  ring2: require("../assets/sounds/ring2.wav"),
-  ring3: require("../assets/sounds/ring3.wav"),
+const CALL_SOURCES: Record<string, AVPlaybackSource> = {
+  ring1: require("../assets/sounds/ring1.wav") as AVPlaybackSource,
+  ring2: require("../assets/sounds/ring2.wav") as AVPlaybackSource,
+  ring3: require("../assets/sounds/ring3.wav") as AVPlaybackSource,
 };
 
-const MSG_SOURCES: Record<string, ReturnType<typeof require>> = {
-  ping:  require("../assets/sounds/ping.wav"),
-  chime: require("../assets/sounds/chime.wav"),
-  pop:   require("../assets/sounds/pop.wav"),
+const MSG_SOURCES: Record<string, AVPlaybackSource> = {
+  ping:  require("../assets/sounds/ping.wav") as AVPlaybackSource,
+  chime: require("../assets/sounds/chime.wav") as AVPlaybackSource,
+  pop:   require("../assets/sounds/pop.wav") as AVPlaybackSource,
 };
 
 let currentSound: Audio.Sound | null = null;
@@ -73,10 +73,11 @@ export async function stopRingtone(): Promise<void> {
 
 export async function previewSound(key: string): Promise<void> {
   await stopCurrent();
-  const all: Record<string, ReturnType<typeof require>> = { ...CALL_SOURCES, ...MSG_SOURCES };
-  if (!all[key]) return;
+  const all: Record<string, AVPlaybackSource> = { ...CALL_SOURCES, ...MSG_SOURCES };
+  const src = all[key];
+  if (!src) return;
   await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-  const { sound } = await Audio.Sound.createAsync(all[key], { isLooping: false, volume: 1 });
+  const { sound } = await Audio.Sound.createAsync(src, { isLooping: false, volume: 1 });
   currentSound = sound;
   await sound.playAsync();
   sound.setOnPlaybackStatusUpdate((s) => {

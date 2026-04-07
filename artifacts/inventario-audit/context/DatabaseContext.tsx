@@ -165,9 +165,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       try {
         let auditorias: Auditoria[] = [];
         if (dbRef.current) {
-          auditorias = await dbRef.current.getAllAsync<Auditoria>(
+          auditorias = (await dbRef.current.getAllAsync(
             "SELECT * FROM auditorias WHERE estado IN ('archivada', 'completada')"
-          );
+          )) as Auditoria[];
         } else {
           auditorias = storeRef.current.auds.filter(
             (a) => a.estado === "archivada" || a.estado === "completada"
@@ -176,9 +176,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         for (const aud of auditorias) {
           let prods: ProductoInventario[] = [];
           if (dbRef.current) {
-            prods = await dbRef.current.getAllAsync<ProductoInventario>(
+            prods = (await dbRef.current.getAllAsync(
               "SELECT * FROM productos WHERE auditoria_id = ?", [aud.id]
-            );
+            )) as ProductoInventario[];
           } else {
             prods = storeRef.current.prods.filter((p) => p.auditoria_id === aud.id);
           }
@@ -635,17 +635,17 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     let totalContados = 0;
 
     if (dbRef.current) {
-      const aud = await dbRef.current.getFirstAsync<Auditoria>(
+      const aud = (await dbRef.current.getFirstAsync(
         "SELECT * FROM auditorias WHERE id = ?", [id]
-      );
+      )) as Auditoria | undefined;
       if (aud) auditoriaNombre = aud.nombre;
       await dbRef.current.runAsync(
         "UPDATE auditorias SET estado = 'archivada', fecha_modificacion = ? WHERE id = ?",
         [now, id]
       );
-      prods = await dbRef.current.getAllAsync<ProductoInventario>(
+      prods = (await dbRef.current.getAllAsync(
         "SELECT * FROM productos WHERE auditoria_id = ?", [id]
-      );
+      )) as ProductoInventario[];
       totalProductos = prods.length;
       totalContados = prods.filter((p) => p.stock_fisico !== null).length;
     } else {

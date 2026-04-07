@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useStoreConfig } from "@/context/StoreConfigContext";
-import { obtenerConversaciones, obtenerTiendas, type ConversacionAPI } from "@/utils/api";
+import { obtenerConversaciones, obtenerTiendas, type ConversacionAPI, type TiendaAPI } from "@/utils/api";
 import { Colors } from "@/constants/colors";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
