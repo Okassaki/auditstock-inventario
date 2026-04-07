@@ -4,6 +4,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
+import { Audio } from "expo-av";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -113,6 +114,22 @@ function buildList(msgs: MensajeAPI[]): ListItem[] {
   return items;
 }
 
+function formatSegs(segs: number): string {
+  const m = Math.floor(segs / 60);
+  const s = segs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function waveformBars(seed: number): number[] {
+  const bars: number[] = [];
+  let s = seed;
+  for (let i = 0; i < 28; i++) {
+    s = ((s * 1103515245 + 12345) & 0x7fffffff);
+    bars.push(3 + (s % 14));
+  }
+  return bars;
+}
+
 async function uploadArchivo(uri: string, nombre: string, mime: string): Promise<{ url: string; nombre: string }> {
   const formData = new FormData();
   formData.append("archivo", { uri, name: nombre, type: mime } as unknown as Blob);
@@ -153,6 +170,19 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
 
   // Eliminación
   const [eliminando, setEliminando] = useState(false);
+
+  // Grabación de voz
+  const [grabando, setGrabando] = useState(false);
+  const [duracionGrab, setDuracionGrab] = useState(0);
+  const cancelarGrab = useRef(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const grabTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const grabPulse = useRef(new Animated.Value(1)).current;
+
+  // Reproducción de notas de voz
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const [playPos, setPlayPos] = useState<Record<number, number>>({});
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   // ── Fetch mensajes ──────────────────────────────────────────────────────
 
@@ -205,7 +235,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
   async function doEnviar(opts: {
     texto?: string;
     adjuntoUrl?: string;
-    adjuntoTipo?: "imagen" | "documento" | "contacto";
+    adjuntoTipo?: "imagen" | "documento" | "contacto" | "audio";
     adjuntoNombre?: string;
     reenviado?: boolean;
   }) {
@@ -295,6 +325,96 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
     const resumen = telefonos ? `${nombre} — ${telefonos}` : nombre;
     await doEnviar({ adjuntoTipo: "contacto", adjuntoNombre: resumen });
   }
+
+  // ── Grabación de voz ────────────────────────────────────────────────────
+
+  async function iniciarGrabacion() {
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (perm.status !== "granted") return;
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const rec = new Audio.Recording();
+      await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await rec.startAsync();
+      recordingRef.current = rec;
+      cancelarGrab.current = false;
+      setGrabando(true);
+      setDuracionGrab(0);
+      grabTimerRef.current = setInterval(() => setDuracionGrab((d) => d + 1), 1000);
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(grabPulse, { toValue: 0.4, duration: 600, useNativeDriver: true }),
+          Animated.timing(grabPulse, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
+    } catch {}
+  }
+
+  async function detenerGrabacion(cancelar = false) {
+    if (grabTimerRef.current) { clearInterval(grabTimerRef.current); grabTimerRef.current = null; }
+    grabPulse.stopAnimation();
+    grabPulse.setValue(1);
+    setGrabando(false);
+    const segsGrabados = duracionGrab;
+    setDuracionGrab(0);
+    const rec = recordingRef.current;
+    recordingRef.current = null;
+    if (!rec) return;
+    try {
+      await rec.stopAndUnloadAsync();
+      if (cancelar || segsGrabados < 1) return;
+      const uri = rec.getURI();
+      if (!uri) return;
+      setEnviando(true);
+      const nombre = `voz_${segsGrabados}s.m4a`;
+      const { url } = await uploadArchivo(uri, nombre, "audio/m4a");
+      await doEnviar({ adjuntoUrl: url, adjuntoTipo: "audio", adjuntoNombre: nombre });
+    } catch { setEnviando(false); }
+  }
+
+  async function togglePlay(msg: MensajeAPI) {
+    if (!msg.adjuntoUrl) return;
+    if (playingId === msg.id) {
+      await soundRef.current?.stopAsync();
+      await soundRef.current?.unloadAsync();
+      soundRef.current = null;
+      setPlayingId(null);
+      return;
+    }
+    if (soundRef.current) {
+      await soundRef.current.stopAsync();
+      await soundRef.current.unloadAsync();
+      soundRef.current = null;
+    }
+    setPlayingId(msg.id);
+    setPlayPos((p) => ({ ...p, [msg.id]: 0 }));
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    const { sound } = await Audio.Sound.createAsync(
+      { uri: msg.adjuntoUrl },
+      { shouldPlay: true },
+      (status) => {
+        if (status.isLoaded) {
+          const prog = status.durationMillis ? status.positionMillis / status.durationMillis : 0;
+          setPlayPos((p) => ({ ...p, [msg.id]: prog }));
+          if (status.didJustFinish) {
+            setPlayingId(null);
+            setPlayPos((p) => ({ ...p, [msg.id]: 0 }));
+            sound.unloadAsync();
+          }
+        }
+      }
+    );
+    soundRef.current = sound;
+  }
+
+  // Cleanup al desmontar
+  useEffect(() => {
+    return () => {
+      if (grabTimerRef.current) clearInterval(grabTimerRef.current);
+      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      soundRef.current?.unloadAsync().catch(() => {});
+    };
+  }, []);
 
   // ── Selección / Reenvío ─────────────────────────────────────────────────
 
@@ -458,6 +578,43 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                     </Text>
                   </View>
                 )}
+                {msg.adjuntoTipo === "audio" && (() => {
+                  const durSecs = parseInt(msg.adjuntoNombre?.match(/voz_(\d+)s/)?.[1] ?? "0");
+                  const bars = waveformBars(msg.id);
+                  const prog = playPos[msg.id] ?? 0;
+                  const playing = playingId === msg.id;
+                  return (
+                    <TouchableOpacity
+                      style={makeStyles(T).audioBubble}
+                      onPress={() => togglePlay(msg)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[makeStyles(T).audioPlayBtn, { backgroundColor: esMio ? "rgba(255,255,255,0.2)" : T.primary + "30" }]}>
+                        <Feather name={playing ? "pause" : "play"} size={15} color={esMio ? "#fff" : T.primary} />
+                      </View>
+                      <View style={makeStyles(T).audioWaveform}>
+                        {bars.map((h, i) => {
+                          const active = i / bars.length < prog;
+                          return (
+                            <View
+                              key={i}
+                              style={[
+                                makeStyles(T).audioWaveBar,
+                                { height: h },
+                                active
+                                  ? { backgroundColor: esMio ? "#fff" : T.primary }
+                                  : { backgroundColor: esMio ? "rgba(255,255,255,0.35)" : T.textMuted },
+                              ]}
+                            />
+                          );
+                        })}
+                      </View>
+                      <Text style={[makeStyles(T).audioDur, esMio && { color: "rgba(255,255,255,0.75)" }]}>
+                        {playing ? formatSegs(Math.round((playPos[msg.id] ?? 0) * durSecs)) : formatSegs(durSecs)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })()}
                 {!!msg.texto && (
                   <Text style={[makeStyles(T).bubbleText, esMio && makeStyles(T).bubbleTextMio]}>{msg.texto}</Text>
                 )}
@@ -595,29 +752,58 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
         )}
 
         {/* Input bar */}
-        <View style={[s.inputBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-          <TouchableOpacity onPress={toggleAttach} style={s.attachBtn}>
-            <Feather name={showAttach ? "x" : "paperclip"} size={20} color={showAttach ? T.primary : T.textSec} />
-          </TouchableOpacity>
-          <TextInput
-            style={s.input}
-            placeholder="Escribí un mensaje..."
-            placeholderTextColor={T.textMuted}
-            value={texto}
-            onChangeText={setTexto}
-            multiline
-            maxLength={1000}
-            editable={!enviando}
-            onFocus={() => showAttach && setShowAttach(false)}
-          />
-          <TouchableOpacity
-            style={[s.sendBtn, { backgroundColor: T.primary }, (!texto.trim() || enviando) && s.sendBtnOff]}
-            onPress={enviar}
-            disabled={!texto.trim() || enviando}
-          >
-            {enviando ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="send" size={18} color="#fff" />}
-          </TouchableOpacity>
-        </View>
+        {grabando ? (
+          <View style={[s.grabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+            <TouchableOpacity onPress={() => detenerGrabacion(true)} style={s.grabCancelBtn}>
+              <Feather name="x" size={20} color="#FF4757" />
+              <Text style={s.grabCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+            <View style={s.grabCenter}>
+              <Animated.View style={[s.grabDot, { opacity: grabPulse }]} />
+              <Text style={s.grabDurText}>{formatSegs(duracionGrab)}</Text>
+            </View>
+            <Pressable
+              style={[s.sendBtn, { backgroundColor: "#FF4757" }]}
+              onPressOut={() => detenerGrabacion(false)}
+            >
+              <Feather name="send" size={18} color="#fff" />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={[s.inputBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+            <TouchableOpacity onPress={toggleAttach} style={s.attachBtn}>
+              <Feather name={showAttach ? "x" : "paperclip"} size={20} color={showAttach ? T.primary : T.textSec} />
+            </TouchableOpacity>
+            <TextInput
+              style={s.input}
+              placeholder="Escribí un mensaje..."
+              placeholderTextColor={T.textMuted}
+              value={texto}
+              onChangeText={setTexto}
+              multiline
+              maxLength={1000}
+              editable={!enviando}
+              onFocus={() => showAttach && setShowAttach(false)}
+            />
+            {texto.trim() ? (
+              <TouchableOpacity
+                style={[s.sendBtn, { backgroundColor: T.primary }, enviando && s.sendBtnOff]}
+                onPress={enviar}
+                disabled={enviando}
+              >
+                {enviando ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="send" size={18} color="#fff" />}
+              </TouchableOpacity>
+            ) : (
+              <Pressable
+                style={[s.sendBtn, { backgroundColor: T.primary }]}
+                onLongPress={iniciarGrabacion}
+                delayLongPress={200}
+              >
+                <Feather name="mic" size={18} color="#fff" />
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {/* Panel de adjuntos */}
         {showAttach && (
@@ -783,5 +969,28 @@ function makeStyles(T: Theme) {
       backgroundColor: "rgba(0,0,0,0.4)", alignItems: "center", justifyContent: "center", gap: 12,
     },
     reenviandoText: { fontSize: 14, fontFamily: "Inter_500Medium", color: "#fff" },
+    // Audio bubble
+    audioBubble: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      paddingHorizontal: 12, paddingVertical: 10, minWidth: 200, maxWidth: 240,
+    },
+    audioPlayBtn: {
+      width: 30, height: 30, borderRadius: 15,
+      alignItems: "center", justifyContent: "center",
+    },
+    audioWaveform: { flex: 1, flexDirection: "row", alignItems: "center", gap: 2, height: 28 },
+    audioWaveBar: { width: 2.5, borderRadius: 2 },
+    audioDur: { fontSize: 11, fontFamily: "Inter_500Medium", color: T.textSec, minWidth: 28 },
+    // Barra de grabación
+    grabBar: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      paddingHorizontal: 10, paddingTop: 10,
+      borderTopWidth: 1, borderTopColor: T.border, backgroundColor: T.surface,
+    },
+    grabCancelBtn: { flexDirection: "row", alignItems: "center", gap: 4, padding: 6 },
+    grabCancelText: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FF4757" },
+    grabCenter: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+    grabDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#FF4757" },
+    grabDurText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: T.text },
   });
 }
