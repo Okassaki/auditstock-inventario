@@ -75,6 +75,13 @@ export default function BossLayout() {
           }}
         />
         <Tabs.Screen
+          name="mensajes"
+          options={{
+            title: "Mensajes",
+            tabBarIcon: ({ color, size }) => <Feather name="message-circle" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
           name="tienda"
           options={{ href: null, headerShown: false }}
         />

@@ -34,6 +34,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "exclamationmark.triangle", selected: "exclamationmark.triangle.fill" }} />
         <Label>Alertas</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="chat">
+        <Icon sf={{ default: "message", selected: "message.fill" }} />
+        <Label>Chat</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -181,6 +185,18 @@ function ClassicTabLayout() {
                 <SymbolView name="exclamationmark.triangle" tintColor={color} size={24} />
               ) : (
                 <Feather name="alert-triangle" size={22} color={color} />
+              ),
+          }}
+        />
+        <Tabs.Screen
+          name="chat"
+          options={{
+            title: "Chat",
+            tabBarIcon: ({ color }) =>
+              isIOS ? (
+                <SymbolView name="message" tintColor={color} size={24} />
+              ) : (
+                <Feather name="message-circle" size={22} color={color} />
               ),
           }}
         />
