@@ -1,4 +1,5 @@
 import { pgTable, serial, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const mensajesTable = pgTable("mensajes", {
   id: serial("id").primaryKey(),
@@ -11,6 +12,8 @@ export const mensajesTable = pgTable("mensajes", {
   adjuntoTipo: text("adjunto_tipo"),
   adjuntoNombre: text("adjunto_nombre"),
   reenviado: boolean("reenviado").notNull().default(false),
+  eliminadoTodos: boolean("eliminado_todos").notNull().default(false),
+  eliminadosPara: text("eliminados_para").array().notNull().default(sql`'{}'::text[]`),
 });
 
 export type Mensaje = typeof mensajesTable.$inferSelect;

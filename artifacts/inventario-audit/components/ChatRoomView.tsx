@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   KeyboardAvoidingView,
@@ -22,6 +23,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  eliminarMensaje,
   enviarMensaje,
   marcarMensajesLeidos,
   obtenerMensajesConversacion,
@@ -146,6 +148,9 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
   const [showForwardPicker, setShowForwardPicker] = useState(false);
   const [tiendas, setTiendas] = useState<TiendaAPI[]>([]);
   const [reenviando, setReeenviando] = useState(false);
+
+  // Eliminación
+  const [eliminando, setEliminando] = useState(false);
 
   // ── Fetch mensajes ──────────────────────────────────────────────────────
 
@@ -316,6 +321,56 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
     setShowForwardPicker(true);
   }
 
+  function handleEliminar() {
+    if (seleccionados.size === 0) return;
+    Alert.alert(
+      "Eliminar mensaje",
+      seleccionados.size > 1
+        ? `¿Eliminar ${seleccionados.size} mensajes?`
+        : "¿Cómo quieres eliminar este mensaje?",
+      [
+        {
+          text: "Eliminar para mí",
+          onPress: async () => {
+            setEliminando(true);
+            const ids = Array.from(seleccionados);
+            for (const id of ids) {
+              await eliminarMensaje(id, "yo", yo).catch(() => {});
+            }
+            setMsgs((prev) =>
+              prev.map((m) =>
+                seleccionados.has(m.id)
+                  ? { ...m, eliminadosPara: [...(m.eliminadosPara ?? []), yo] }
+                  : m
+              )
+            );
+            setEliminando(false);
+            cancelarSeleccion();
+          },
+        },
+        {
+          text: "Eliminar para todos",
+          style: "destructive",
+          onPress: async () => {
+            setEliminando(true);
+            const ids = Array.from(seleccionados);
+            for (const id of ids) {
+              await eliminarMensaje(id, "todos", yo).catch(() => {});
+            }
+            setMsgs((prev) =>
+              prev.map((m) =>
+                seleccionados.has(m.id) ? { ...m, eliminadoTodos: true } : m
+              )
+            );
+            setEliminando(false);
+            cancelarSeleccion();
+          },
+        },
+        { text: "Cancelar", style: "cancel" },
+      ]
+    );
+  }
+
   async function reenviarA(destino: string, _destinoNombre: string) {
     setShowForwardPicker(false);
     setReeenviando(true);
@@ -366,36 +421,47 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
           {!esMio && con === "GENERAL" && (
             <Text style={[makeStyles(T).senderName, { color: T.primary }]}>{msg.deTienda}</Text>
           )}
-          {msg.reenviado && (
-            <View style={makeStyles(T).reenviadoTag}>
-              <Feather name="corner-up-right" size={11} color={T.textSec} />
-              <Text style={makeStyles(T).reenviadoText}>Reenviado</Text>
+          {msg.eliminadoTodos ? (
+            <View style={[makeStyles(T).bubble, esMio ? makeStyles(T).bubbleMio : makeStyles(T).bubbleAjeno, { flexDirection: "row", alignItems: "center", gap: 6, opacity: 0.6 }]}>
+              <Feather name="slash" size={13} color={esMio ? "rgba(255,255,255,0.6)" : T.textSec} />
+              <Text style={[makeStyles(T).bubbleText, esMio && makeStyles(T).bubbleTextMio, { fontStyle: "italic" }]}>
+                Mensaje eliminado
+              </Text>
             </View>
+          ) : (
+            <>
+              {msg.reenviado && (
+                <View style={makeStyles(T).reenviadoTag}>
+                  <Feather name="corner-up-right" size={11} color={T.textSec} />
+                  <Text style={makeStyles(T).reenviadoText}>Reenviado</Text>
+                </View>
+              )}
+              <View style={[makeStyles(T).bubble, esMio ? makeStyles(T).bubbleMio : makeStyles(T).bubbleAjeno]}>
+                {msg.adjuntoTipo === "imagen" && msg.adjuntoUrl && (
+                  <Image source={{ uri: msg.adjuntoUrl }} style={makeStyles(T).adjuntoImg} contentFit="cover" />
+                )}
+                {msg.adjuntoTipo === "documento" && (
+                  <View style={makeStyles(T).adjuntoDoc}>
+                    <Feather name="file-text" size={22} color={esMio ? "rgba(255,255,255,0.8)" : T.primary} />
+                    <Text style={[makeStyles(T).adjuntoDocNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
+                      {msg.adjuntoNombre ?? "Documento"}
+                    </Text>
+                  </View>
+                )}
+                {msg.adjuntoTipo === "contacto" && (
+                  <View style={makeStyles(T).adjuntoContacto}>
+                    <Feather name="user" size={20} color={esMio ? "rgba(255,255,255,0.9)" : T.primary} />
+                    <Text style={[makeStyles(T).adjuntoContactoNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
+                      {msg.adjuntoNombre ?? "Contacto"}
+                    </Text>
+                  </View>
+                )}
+                {!!msg.texto && (
+                  <Text style={[makeStyles(T).bubbleText, esMio && makeStyles(T).bubbleTextMio]}>{msg.texto}</Text>
+                )}
+              </View>
+            </>
           )}
-          <View style={[makeStyles(T).bubble, esMio ? makeStyles(T).bubbleMio : makeStyles(T).bubbleAjeno]}>
-            {msg.adjuntoTipo === "imagen" && msg.adjuntoUrl && (
-              <Image source={{ uri: msg.adjuntoUrl }} style={makeStyles(T).adjuntoImg} contentFit="cover" />
-            )}
-            {msg.adjuntoTipo === "documento" && (
-              <View style={makeStyles(T).adjuntoDoc}>
-                <Feather name="file-text" size={22} color={esMio ? "rgba(255,255,255,0.8)" : T.primary} />
-                <Text style={[makeStyles(T).adjuntoDocNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
-                  {msg.adjuntoNombre ?? "Documento"}
-                </Text>
-              </View>
-            )}
-            {msg.adjuntoTipo === "contacto" && (
-              <View style={makeStyles(T).adjuntoContacto}>
-                <Feather name="user" size={20} color={esMio ? "rgba(255,255,255,0.9)" : T.primary} />
-                <Text style={[makeStyles(T).adjuntoContactoNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
-                  {msg.adjuntoNombre ?? "Contacto"}
-                </Text>
-              </View>
-            )}
-            {!!msg.texto && (
-              <Text style={[makeStyles(T).bubbleText, esMio && makeStyles(T).bubbleTextMio]}>{msg.texto}</Text>
-            )}
-          </View>
           <Text style={[makeStyles(T).hora, esMio ? makeStyles(T).horaMio : makeStyles(T).horaAjeno]}>
             {formatHora(msg.creadoAt)}
           </Text>
@@ -406,7 +472,8 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
 
   // ── Render ──────────────────────────────────────────────────────────────
 
-  const listData = buildList(msgs);
+  const msgsVisibles = msgs.filter((m) => !(m.eliminadosPara ?? []).includes(yo));
+  const listData = buildList(msgsVisibles);
   const s = makeStyles(T);
 
   const attachTranslateY = attachAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] });
@@ -429,6 +496,15 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
             >
               <Feather name="corner-up-right" size={20} color={T.primary} />
               <Text style={[s.forwardBtnText, { color: T.primary }]}>Reenviar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleEliminar}
+              style={[s.forwardBtn, { marginLeft: 4 }, (seleccionados.size === 0 || eliminando) && { opacity: 0.4 }]}
+              disabled={seleccionados.size === 0 || eliminando}
+            >
+              {eliminando
+                ? <ActivityIndicator size={18} color="#FF4757" />
+                : <Feather name="trash-2" size={20} color="#FF4757" />}
             </TouchableOpacity>
           </>
         ) : (

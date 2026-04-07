@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, mensajesTable, pushTokensTable } from "@workspace/db";
-import { eq, or, isNull, desc, and, gt, ne } from "drizzle-orm";
+import { eq, or, isNull, desc, and, gt, ne, sql as drizzleSql } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -192,6 +192,31 @@ router.get("/mensajes", async (req, res) => {
     res.json(msgs.reverse());
   } catch {
     res.status(500).json({ error: "Error al obtener mensajes" });
+  }
+});
+
+// ── Eliminar mensaje ─────────────────────────────────────────────────────────
+// DELETE /mensajes/:id?tipo=todos|yo&yo=TIENDA01
+router.delete("/mensajes/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: "id inválido" });
+  const { tipo, yo } = req.query as { tipo?: string; yo?: string };
+
+  try {
+    if (tipo === "todos") {
+      await db.update(mensajesTable)
+        .set({ eliminadoTodos: true })
+        .where(eq(mensajesTable.id, id));
+    } else if (tipo === "yo" && yo) {
+      await db.execute(
+        drizzleSql`UPDATE mensajes SET eliminados_para = array_append(eliminados_para, ${yo}) WHERE id = ${id} AND NOT (${yo} = ANY(eliminados_para))`
+      );
+    } else {
+      return res.status(400).json({ error: "tipo requerido (todos|yo) y yo" });
+    }
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Error al eliminar mensaje" });
   }
 });
 

@@ -157,6 +157,8 @@ export interface MensajeAPI {
   adjuntoTipo?: "imagen" | "documento" | "contacto" | null;
   adjuntoNombre?: string | null;
   reenviado?: boolean;
+  eliminadoTodos?: boolean;
+  eliminadosPara?: string[];
 }
 
 export interface ConversacionAPI {
@@ -190,5 +192,13 @@ export async function enviarMensaje(
 
 export async function marcarMensajesLeidos(yo: string, con: string): Promise<void> {
   await apiFetch(`/mensajes/marcarLeidos?yo=${encodeURIComponent(yo)}&con=${encodeURIComponent(con)}`, { method: "PATCH" });
+}
+
+export async function eliminarMensaje(
+  id: number,
+  tipo: "todos" | "yo",
+  yo: string,
+): Promise<void> {
+  await apiFetch(`/mensajes/${id}?tipo=${tipo}&yo=${encodeURIComponent(yo)}`, { method: "DELETE" });
 }
 
