@@ -13,7 +13,7 @@ import { useStoreConfig } from "./StoreConfigContext";
 
 const API_BASE =
   (process.env.EXPO_PUBLIC_API_URL as string | undefined) ??
-  `https://${process.env.EXPO_PUBLIC_DOMAIN as string}`;
+  "https://439c42d1-136d-446b-bfa8-78b46cf7a994-00-3pt3107uvwsb4.janeway.replit.dev";
 
 const WS_URL = API_BASE.replace(/^https/, "wss").replace(/^http/, "ws") + "/ws";
 const JITSI_SERVER = "https://meet.jit.si";

@@ -14,7 +14,6 @@ import * as Updates from "expo-updates";
 import React, { useEffect, useRef } from "react";
 import { Alert, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -169,13 +168,11 @@ export default function RootLayout() {
             <StoreConfigProvider>
               <DatabaseProvider>
                 <GestureHandlerRootView style={{ flex: 1 }}>
-                  <KeyboardProvider>
-                    <CallProvider>
-                      <RootLayoutNav />
-                      <IncomingCallOverlay />
-                      <ActiveCallOverlay />
-                    </CallProvider>
-                  </KeyboardProvider>
+                  <CallProvider>
+                    <RootLayoutNav />
+                    <IncomingCallOverlay />
+                    <ActiveCallOverlay />
+                  </CallProvider>
                 </GestureHandlerRootView>
               </DatabaseProvider>
             </StoreConfigProvider>
