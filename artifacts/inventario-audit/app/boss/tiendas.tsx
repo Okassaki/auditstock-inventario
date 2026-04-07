@@ -282,11 +282,15 @@ export default function TiendasScreen() {
         }
       />
 
-      <Modal visible={modalVisible} transparent animationType="fade">
-        <TouchableWithoutFeedback onPress={() => { if (!saving) setModalVisible(false); }}>
-          <View style={styles.overlay}>
-            <TouchableWithoutFeedback>
-              <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => { if (!saving) setModalVisible(false); }}>
+        <KeyboardAvoidingView
+          style={styles.kavFull}
+          behavior={Platform.OS === "ios" ? "padding" : "padding"}
+          keyboardVerticalOffset={0}
+        >
+          <TouchableWithoutFeedback onPress={() => { if (!saving) setModalVisible(false); }}>
+            <View style={styles.overlay}>
+              <TouchableWithoutFeedback>
                 <View style={styles.modalCard}>
                   <Text style={styles.modalTitle}>
                     {editTarget ? "Editar tienda" : "Nueva tienda"}
@@ -302,6 +306,7 @@ export default function TiendasScreen() {
                       onChangeText={(v) => { setForm((f) => ({ ...f, nombre: v })); setFormError(null); }}
                       autoCorrect={false}
                       editable={!saving}
+                      returnKeyType="next"
                     />
                   </View>
 
@@ -316,6 +321,8 @@ export default function TiendasScreen() {
                       autoCapitalize="characters"
                       autoCorrect={false}
                       editable={!saving}
+                      returnKeyType="done"
+                      onSubmitEditing={handleGuardar}
                     />
                     <Text style={styles.fieldHint}>Solo letras, números, - y _</Text>
                   </View>
@@ -351,10 +358,10 @@ export default function TiendasScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
-              </KeyboardAvoidingView>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -425,6 +432,7 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", paddingVertical: 60, gap: 12 },
   emptyText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: TEXT_MUTED },
   emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: TEXT_MUTED, textAlign: "center" },
+  kavFull: { flex: 1 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 },
   modalCard: {
     backgroundColor: SURFACE_ELEV,
