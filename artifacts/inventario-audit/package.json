@@ -56,7 +56,6 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
-    "@config-plugins/react-native-webrtc": "^13.0.0",
     "buffer": "^6.0.3",
     "expo-av": "~16.0.8",
     "expo-camera": "^17.0.10",
@@ -70,7 +69,6 @@
     "expo-sqlite": "^16.0.10",
     "expo-updates": "~29.0.16",
     "react-native-view-shot": "^4.0.3",
-    "react-native-webrtc": "^124.0.7",
     "xlsx": "^0.18.5"
   }
 }
