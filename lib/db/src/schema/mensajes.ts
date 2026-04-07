@@ -1,9 +1,8 @@
 import { pgTable, serial, text, timestamp, boolean } from "drizzle-orm/pg-core";
-import { tiendasTable } from "./tiendas";
 
 export const mensajesTable = pgTable("mensajes", {
   id: serial("id").primaryKey(),
-  deTienda: text("de_tienda").notNull().references(() => tiendasTable.codigo, { onDelete: "cascade" }),
+  deTienda: text("de_tienda").notNull(),
   paraTienda: text("para_tienda"),
   texto: text("texto").notNull(),
   leido: boolean("leido").notNull().default(false),
