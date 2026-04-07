@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -129,6 +129,7 @@ export default function DashboardScreen() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const retryingRef = useRef(false);
 
   async function handleExportarTodo() {
     const conDatos = data.filter((d) => d.progresoActivo?.productosJson);
@@ -193,16 +194,19 @@ export default function DashboardScreen() {
   }
 
   const fetchData = useCallback(async (isManual = false, attempt = 0) => {
-    if (isManual) setRefreshing(true);
+    if (attempt === 0 && retryingRef.current) return;
+    if (attempt === 0) retryingRef.current = true;
+    if (isManual) { retryingRef.current = true; setRefreshing(true); }
     if (attempt === 0) setError(null);
     try {
       const result = await obtenerProgreso();
       setData(result);
       setLastRefresh(new Date());
       setError(null);
+      retryingRef.current = false;
     } catch (e: any) {
       const msg: string = e?.message ?? "Error de conexión";
-      const isTransient = msg.includes("404") || msg.includes("conexión") || msg.includes("Network");
+      const isTransient = msg.includes("404") || msg.includes("conexión") || msg.includes("Network") || msg.includes("fetch") || msg.includes("Failed");
       if (isTransient && attempt < 3) {
         const delay = (attempt + 1) * 3000;
         setError(`Reconectando... (${attempt + 1}/3)`);
@@ -210,6 +214,7 @@ export default function DashboardScreen() {
         return;
       }
       setError(msg);
+      retryingRef.current = false;
     } finally {
       setLoading(false);
       setRefreshing(false);

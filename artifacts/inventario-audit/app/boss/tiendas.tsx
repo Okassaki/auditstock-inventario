@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as LegacyFS from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -48,6 +48,7 @@ export default function TiendasScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const retryingRef = useRef(false);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<TiendaAPI | null>(null);
@@ -57,15 +58,18 @@ export default function TiendasScreen() {
   const [uploadingExcel, setUploadingExcel] = useState<string | null>(null);
 
   const fetchTiendas = useCallback(async (manual = false, attempt = 0) => {
-    if (manual) setRefreshing(true);
+    if (attempt === 0 && retryingRef.current) return;
+    if (attempt === 0) retryingRef.current = true;
+    if (manual) { retryingRef.current = true; setRefreshing(true); }
     if (attempt === 0) setError(null);
     try {
       const result = await obtenerTiendas();
       setTiendas(result);
       setError(null);
+      retryingRef.current = false;
     } catch (e: any) {
       const msg: string = e?.message ?? "Error de conexión";
-      const isTransient = msg.includes("404") || msg.includes("conexión") || msg.includes("Network");
+      const isTransient = msg.includes("404") || msg.includes("conexión") || msg.includes("Network") || msg.includes("fetch") || msg.includes("Failed");
       if (isTransient && attempt < 3) {
         const delay = (attempt + 1) * 3000;
         setError(`Reconectando... (${attempt + 1}/3)`);
@@ -73,6 +77,7 @@ export default function TiendasScreen() {
         return;
       }
       setError(msg);
+      retryingRef.current = false;
     } finally {
       setLoading(false);
       setRefreshing(false);
