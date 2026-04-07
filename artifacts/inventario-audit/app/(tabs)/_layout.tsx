@@ -7,7 +7,7 @@ import {
   NativeTabs,
 } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
-import { MaterialCommunityIcons, Feather, Ionicons } from "@expo/vector-icons";
+import { MaterialCommunityIcons, Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,6 +33,18 @@ function NativeTabLayout() {
       <NativeTabs.Trigger name="alertas">
         <Icon sf={{ default: "exclamationmark.triangle", selected: "exclamationmark.triangle.fill" }} />
         <Label>Alertas</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="inventario">
+        <Icon sf={{ default: "shippingbox", selected: "shippingbox.fill" }} />
+        <Label>Stock</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="cobros">
+        <Icon sf={{ default: "dollarsign.circle", selected: "dollarsign.circle.fill" }} />
+        <Label>Cobros</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="ordenes">
+        <Icon sf={{ default: "wrench.and.screwdriver", selected: "wrench.and.screwdriver.fill" }} />
+        <Label>Órdenes</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -181,6 +193,42 @@ function ClassicTabLayout() {
                 <SymbolView name="exclamationmark.triangle" tintColor={color} size={24} />
               ) : (
                 <Feather name="alert-triangle" size={22} color={color} />
+              ),
+          }}
+        />
+        <Tabs.Screen
+          name="inventario"
+          options={{
+            title: "Stock",
+            tabBarIcon: ({ color }) =>
+              isIOS ? (
+                <SymbolView name="shippingbox" tintColor={color} size={24} />
+              ) : (
+                <Feather name="package" size={22} color={color} />
+              ),
+          }}
+        />
+        <Tabs.Screen
+          name="cobros"
+          options={{
+            title: "Cobros",
+            tabBarIcon: ({ color }) =>
+              isIOS ? (
+                <SymbolView name="dollarsign.circle" tintColor={color} size={24} />
+              ) : (
+                <MaterialIcons name="attach-money" size={22} color={color} />
+              ),
+          }}
+        />
+        <Tabs.Screen
+          name="ordenes"
+          options={{
+            title: "Órdenes",
+            tabBarIcon: ({ color }) =>
+              isIOS ? (
+                <SymbolView name="wrench.and.screwdriver" tintColor={color} size={24} />
+              ) : (
+                <Feather name="tool" size={22} color={color} />
               ),
           }}
         />

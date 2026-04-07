@@ -75,6 +75,27 @@ export default function BossLayout() {
           }}
         />
         <Tabs.Screen
+          name="inventario"
+          options={{
+            title: "Catálogo",
+            tabBarIcon: ({ color, size }) => <Feather name="package" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="ventas"
+          options={{
+            title: "Cobros",
+            tabBarIcon: ({ color, size }) => <Feather name="dollar-sign" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="ordenes_boss"
+          options={{
+            title: "Órdenes",
+            tabBarIcon: ({ color, size }) => <Feather name="tool" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
           name="tienda"
           options={{ href: null, headerShown: false }}
         />
