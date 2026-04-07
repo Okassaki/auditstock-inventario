@@ -21,6 +21,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseContext";
 import { StoreConfigProvider, useStoreConfig } from "@/context/StoreConfigContext";
 import { BossConfigProvider, useBossConfig } from "@/context/BossConfigContext";
+import { CallProvider } from "@/context/CallContext";
+import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
+import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
 import { registerForPushNotificationsAsync } from "@/utils/notifications";
 
 Notifications.setNotificationHandler({
@@ -110,6 +113,7 @@ function RootLayoutNav() {
       <Stack.Screen name="boss-login" options={{ headerShown: false }} />
       <Stack.Screen name="boss" options={{ headerShown: false }} />
       <Stack.Screen name="chat-room" options={{ headerShown: false }} />
+      <Stack.Screen name="ajustes-sonido" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -166,7 +170,11 @@ export default function RootLayout() {
               <DatabaseProvider>
                 <GestureHandlerRootView style={{ flex: 1 }}>
                   <KeyboardProvider>
-                    <RootLayoutNav />
+                    <CallProvider>
+                      <RootLayoutNav />
+                      <IncomingCallOverlay />
+                      <ActiveCallOverlay />
+                    </CallProvider>
                   </KeyboardProvider>
                 </GestureHandlerRootView>
               </DatabaseProvider>

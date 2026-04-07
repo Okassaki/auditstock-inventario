@@ -69,6 +69,7 @@
     "expo-sqlite": "^16.0.10",
     "expo-updates": "~29.0.16",
     "react-native-view-shot": "^4.0.3",
+    "react-native-webrtc": "^124.0.7",
     "xlsx": "^0.18.5"
   }
 }

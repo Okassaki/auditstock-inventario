@@ -31,6 +31,7 @@ import {
   type MensajeAPI,
   type TiendaAPI,
 } from "@/utils/api";
+import { useCall } from "@/context/CallContext";
 
 // ─── Temas ─────────────────────────────────────────────────────────────────
 
@@ -126,6 +127,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
   const T = mode === "boss" ? BOSS_THEME : STORE_THEME;
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { initiateCall, callState } = useCall();
   const flatRef = useRef<FlatList>(null);
   const ultimoIdRef = useRef(0);
 
@@ -521,6 +523,35 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                 <Text style={s.headerSub}>{con === "GENERAL" ? "Visible para todas las tiendas" : "Chat privado"}</Text>
               </View>
             </View>
+            <View style={{ flexDirection: "row", gap: 4, marginLeft: "auto" }}>
+              {con !== "GENERAL" && (
+                <>
+                  <TouchableOpacity
+                    style={[s.callBtn, callState !== "idle" && { opacity: 0.4 }]}
+                    disabled={callState !== "idle"}
+                    onPress={() => initiateCall(con, conNombre, "audio")}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="phone" size={20} color={T.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.callBtn, callState !== "idle" && { opacity: 0.4 }]}
+                    disabled={callState !== "idle"}
+                    onPress={() => initiateCall(con, conNombre, "video")}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="video" size={20} color={T.primary} />
+                  </TouchableOpacity>
+                </>
+              )}
+              <TouchableOpacity
+                style={s.callBtn}
+                onPress={() => router.push("/ajustes-sonido")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="settings" size={18} color={T.textSec} />
+              </TouchableOpacity>
+            </View>
           </>
         )}
       </View>
@@ -664,6 +695,7 @@ function makeStyles(T: Theme) {
     headerName: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: T.text },
     headerSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: T.textMuted },
     forwardBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8 },
+    callBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 8 },
     forwardBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
     errorRow: {
       flexDirection: "row", alignItems: "center", gap: 8,

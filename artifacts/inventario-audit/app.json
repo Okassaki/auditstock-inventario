@@ -16,8 +16,9 @@
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "La app necesita acceso a la cámara para escanear códigos de barras.",
-        "NSPhotoLibraryUsageDescription": "La app necesita acceso a las fotos para importar archivos."
+        "NSCameraUsageDescription": "La app necesita acceso a la cámara para escanear códigos y hacer video llamadas.",
+        "NSPhotoLibraryUsageDescription": "La app necesita acceso a las fotos para importar archivos.",
+        "NSMicrophoneUsageDescription": "La app necesita el micrófono para llamadas de audio y video."
       }
     },
     "android": {
@@ -34,7 +35,12 @@
         "android.permission.READ_CONTACTS",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CHANGE_NETWORK_STATE"
       ]
     },
     "web": {
