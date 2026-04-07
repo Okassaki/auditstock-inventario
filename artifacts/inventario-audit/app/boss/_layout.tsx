@@ -89,6 +89,10 @@ export default function BossLayout() {
           name="productos"
           options={{ href: null, headerShown: false }}
         />
+        <Tabs.Screen
+          name="chat-room"
+          options={{ href: null, headerShown: false }}
+        />
       </Tabs>
       <Text style={[styles.firma, { bottom: firmaBottom }]} pointerEvents="none">Daniel E. Sanchez A.</Text>
     </View>

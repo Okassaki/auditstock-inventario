@@ -1,157 +1,158 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
+  RefreshControl,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStoreConfig } from "@/context/StoreConfigContext";
-import { apiFetch } from "@/utils/api";
+import { obtenerConversaciones, obtenerTiendas, type ConversacionAPI, type TiendaAPI } from "@/utils/api";
 import { Colors } from "@/constants/colors";
 
 const C = Colors.dark;
-const POLL_INTERVAL = 5000;
+const POLL = 10000;
 
-interface Mensaje {
-  id: number;
-  deTienda: string;
-  paraTienda: string | null;
-  texto: string;
-  leido: boolean;
-  creadoAt: string;
-}
-
-function formatHora(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatFecha(iso: string) {
-  const d = new Date(iso);
-  const hoy = new Date();
-  if (d.toDateString() === hoy.toDateString()) return "Hoy";
-  const ayer = new Date(hoy); ayer.setDate(hoy.getDate() - 1);
-  if (d.toDateString() === ayer.toDateString()) return "Ayer";
+function formatTime(iso: string) {
+  const d = new Date(iso), hoy = new Date();
+  if (d.toDateString() === hoy.toDateString())
+    return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
 }
 
-function agruparPorFecha(msgs: Mensaje[]) {
-  const grupos: { fecha: string; items: Mensaje[] }[] = [];
-  let fechaActual = "";
-  for (const m of msgs) {
-    const f = formatFecha(m.creadoAt);
-    if (f !== fechaActual) {
-      fechaActual = f;
-      grupos.push({ fecha: f, items: [] });
-    }
-    grupos[grupos.length - 1].items.push(m);
-  }
-  return grupos;
+interface ContactItem {
+  id: string;
+  nombre: string;
+  icono: string;
+  ultimoMensaje?: ConversacionAPI["ultimoMensaje"];
+  noLeidos: number;
+  fijo?: boolean;
 }
 
-export default function ChatScreen() {
+export default function ChatListScreen() {
   const { storeConfig } = useStoreConfig();
-  const insets = useSafeAreaInsets();
-  const flatRef = useRef<FlatList>(null);
-  const [mensajes, setMensajes] = useState<Mensaje[]>([]);
-  const [texto, setTexto] = useState("");
+  const router = useRouter();
+  const [tiendas, setTiendas] = useState<TiendaAPI[]>([]);
+  const [conversaciones, setConversaciones] = useState<ConversacionAPI[]>([]);
   const [loading, setLoading] = useState(true);
-  const [enviando, setEnviando] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ultimoIdRef = useRef(0);
 
-  const fetchMensajes = useCallback(async (inicial = false) => {
+  const fetchAll = useCallback(async (manual = false) => {
     if (!storeConfig) return;
+    if (manual) setRefreshing(true);
     try {
-      const desde = inicial ? 0 : ultimoIdRef.current;
-      const nuevos = await apiFetch<Mensaje[]>(
-        `/mensajes?tienda=${encodeURIComponent(storeConfig.codigo)}&desde=${desde}`
-      );
-      if (nuevos.length > 0) {
-        ultimoIdRef.current = nuevos[nuevos.length - 1].id;
-        if (inicial) {
-          setMensajes(nuevos);
-        } else {
-          setMensajes((prev) => [...prev, ...nuevos]);
-        }
-        setTimeout(() => flatRef.current?.scrollToEnd({ animated: !inicial }), 100);
-      }
+      const [ts, cs] = await Promise.all([
+        obtenerTiendas(),
+        obtenerConversaciones(storeConfig.codigo),
+      ]);
+      setTiendas(ts);
+      setConversaciones(cs);
       setError(null);
     } catch (e: any) {
-      if (inicial) setError(e?.message ?? "Error de conexión");
+      setError(e?.message ?? "Error de conexión");
     } finally {
-      if (inicial) setLoading(false);
+      setLoading(false);
+      setRefreshing(false);
     }
   }, [storeConfig]);
 
   useEffect(() => {
-    fetchMensajes(true);
-    const interval = setInterval(() => fetchMensajes(false), POLL_INTERVAL);
+    fetchAll();
+    const interval = setInterval(() => fetchAll(), POLL);
     return () => clearInterval(interval);
-  }, [fetchMensajes]);
+  }, [fetchAll]);
 
-  async function enviar() {
-    if (!texto.trim() || !storeConfig || enviando) return;
-    const txt = texto.trim();
-    setTexto("");
-    setEnviando(true);
-    try {
-      const nuevo = await apiFetch<Mensaje>("/mensajes", {
-        method: "POST",
-        body: JSON.stringify({ deTienda: storeConfig.codigo, texto: txt }),
-      });
-      ultimoIdRef.current = nuevo.id;
-      setMensajes((prev) => [...prev, nuevo]);
-      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (e: any) {
-      setError(e?.message ?? "Error al enviar");
-      setTexto(txt);
-    } finally {
-      setEnviando(false);
-    }
+  const convMap = new Map(conversaciones.map((c) => [c.contraparte, c]));
+
+  // Armar lista de contactos
+  const contactos: ContactItem[] = [];
+
+  // General siempre primero
+  const generalConv = convMap.get("GENERAL");
+  contactos.push({
+    id: "GENERAL",
+    nombre: "General",
+    icono: "hash",
+    ultimoMensaje: generalConv?.ultimoMensaje,
+    noLeidos: generalConv?.noLeidos ?? 0,
+    fijo: true,
+  });
+
+  // JEFE
+  const jefeConv = convMap.get("JEFE");
+  contactos.push({
+    id: "JEFE",
+    nombre: "Jefe",
+    icono: "shield",
+    ultimoMensaje: jefeConv?.ultimoMensaje,
+    noLeidos: jefeConv?.noLeidos ?? 0,
+    fijo: true,
+  });
+
+  // Otras tiendas (excluir la propia)
+  const otrasTiendas = tiendas.filter((t) => t.codigo !== storeConfig?.codigo);
+  const tiendaConversaciones = otrasTiendas.map((t) => {
+    const conv = convMap.get(t.codigo);
+    return {
+      id: t.codigo,
+      nombre: t.nombre,
+      icono: "map-pin",
+      ultimoMensaje: conv?.ultimoMensaje,
+      noLeidos: conv?.noLeidos ?? 0,
+    } as ContactItem;
+  });
+
+  // Ordenar tiendas: primero con mensajes (más reciente), luego sin mensajes
+  tiendaConversaciones.sort((a, b) => {
+    if (a.ultimoMensaje && b.ultimoMensaje)
+      return b.ultimoMensaje.id - a.ultimoMensaje.id;
+    if (a.ultimoMensaje) return -1;
+    if (b.ultimoMensaje) return 1;
+    return a.nombre.localeCompare(b.nombre);
+  });
+
+  contactos.push(...tiendaConversaciones);
+
+  function abrirChat(item: ContactItem) {
+    router.push({
+      pathname: "/chat-room",
+      params: { yo: storeConfig!.codigo, con: item.id, conNombre: item.nombre },
+    });
   }
 
-  const grupos = agruparPorFecha(mensajes);
-  const listData: ({ type: "fecha"; fecha: string } | { type: "msg"; msg: Mensaje })[] = [];
-  for (const g of grupos) {
-    listData.push({ type: "fecha", fecha: g.fecha });
-    for (const m of g.items) listData.push({ type: "msg", msg: m });
-  }
+  function renderItem({ item }: { item: ContactItem }) {
+    const hasMsg = !!item.ultimoMensaje;
+    const previewTxt = hasMsg
+      ? (item.ultimoMensaje!.deTienda === storeConfig?.codigo ? `Vos: ${item.ultimoMensaje!.texto}` : item.ultimoMensaje!.texto)
+      : "Sin mensajes aún";
 
-  function renderItem({ item }: { item: typeof listData[number] }) {
-    if (item.type === "fecha") {
-      return (
-        <View style={styles.fechaRow}>
-          <View style={styles.fechaLine} />
-          <Text style={styles.fechaText}>{item.fecha}</Text>
-          <View style={styles.fechaLine} />
-        </View>
-      );
-    }
-    const { msg } = item;
-    const esMio = msg.deTienda === storeConfig?.codigo;
-    const esBroadcast = msg.paraTienda === null;
     return (
-      <View style={[styles.bubbleWrap, esMio ? styles.bubbleMioWrap : styles.bubbleAjenoWrap]}>
-        {!esMio && (
-          <Text style={styles.senderName}>{msg.deTienda}{esBroadcast ? " · Todos" : ""}</Text>
-        )}
-        <View style={[styles.bubble, esMio ? styles.bubbleMio : styles.bubbleAjeno]}>
-          <Text style={[styles.bubbleText, esMio ? styles.bubbleTextMio : styles.bubbleTextAjeno]}>
-            {msg.texto}
-          </Text>
+      <TouchableOpacity style={styles.row} onPress={() => abrirChat(item)} activeOpacity={0.7}>
+        <View style={[styles.avatar, item.fijo && { backgroundColor: C.primary + "25" }]}>
+          <Feather name={item.icono as any} size={18} color={item.fijo ? C.primary : C.textSecondary} />
         </View>
-        <Text style={[styles.hora, esMio ? styles.horaMio : styles.horaAjeno]}>
-          {formatHora(msg.creadoAt)}
-        </Text>
-      </View>
+        <View style={styles.rowInfo}>
+          <View style={styles.rowTop}>
+            <Text style={styles.rowNombre} numberOfLines={1}>{item.nombre}</Text>
+            {hasMsg && <Text style={styles.rowTime}>{formatTime(item.ultimoMensaje!.creadoAt)}</Text>}
+          </View>
+          <View style={styles.rowBottom}>
+            <Text style={[styles.rowPreview, !hasMsg && styles.rowPreviewEmpty]} numberOfLines={1}>
+              {previewTxt}
+            </Text>
+            {item.noLeidos > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{item.noLeidos > 99 ? "99+" : item.noLeidos}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   }
 
@@ -164,15 +165,10 @@ export default function ChatScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "padding"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 90}
-    >
+    <View style={styles.container}>
       <View style={styles.header}>
         <Feather name="message-circle" size={18} color={C.primary} />
-        <Text style={styles.headerTitle}>Chat de tiendas</Text>
-        <Text style={styles.headerSub}>Mensajes visibles para todas las tiendas</Text>
+        <Text style={styles.headerTitle}>Mensajes</Text>
       </View>
 
       {error && (
@@ -183,45 +179,19 @@ export default function ChatScreen() {
       )}
 
       <FlatList
-        ref={flatRef}
-        data={listData}
-        keyExtractor={(item, i) => item.type === "fecha" ? `f-${item.fecha}-${i}` : `m-${item.msg.id}`}
+        data={contactos}
+        keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 8 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchAll(true)} tintColor={C.primary} />}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Feather name="message-circle" size={40} color={C.tabIconDefault} />
-            <Text style={styles.emptyText}>Aún no hay mensajes</Text>
-            <Text style={styles.emptyDesc}>Sé el primero en escribir algo</Text>
+            <Text style={styles.emptyText}>No hay contactos</Text>
           </View>
         }
       />
-
-      <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
-        <TextInput
-          style={styles.input}
-          placeholder="Escribí un mensaje..."
-          placeholderTextColor={C.tabIconDefault}
-          value={texto}
-          onChangeText={setTexto}
-          multiline
-          maxLength={1000}
-          returnKeyType="default"
-          editable={!enviando}
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, (!texto.trim() || enviando) && styles.sendBtnDisabled]}
-          onPress={enviar}
-          disabled={!texto.trim() || enviando}
-          activeOpacity={0.7}
-        >
-          {enviando
-            ? <ActivityIndicator size="small" color="#fff" />
-            : <Feather name="send" size={18} color="#fff" />
-          }
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -229,80 +199,37 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
   center: { flex: 1, backgroundColor: C.background, alignItems: "center", justifyContent: "center" },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: C.surfaceBorder,
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: C.surfaceBorder,
     backgroundColor: C.surface,
   },
-  headerTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: C.text, flex: 1 },
-  headerSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: C.textSecondary },
+  headerTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: C.text },
   errorRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#FF475715",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginHorizontal: 12,
-    marginTop: 8,
-    borderRadius: 8,
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#FF475715", paddingHorizontal: 14, paddingVertical: 8,
+    marginHorizontal: 12, marginTop: 8, borderRadius: 8,
   },
   errorText: { fontSize: 13, color: "#FF4757", fontFamily: "Inter_400Regular", flex: 1 },
-  list: { padding: 12, gap: 4 },
+  row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  avatar: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: C.surfaceElevated,
+    alignItems: "center", justifyContent: "center",
+  },
+  rowInfo: { flex: 1, gap: 3 },
+  rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  rowNombre: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: C.text, flex: 1, marginRight: 8 },
+  rowTime: { fontSize: 12, fontFamily: "Inter_400Regular", color: C.textSecondary },
+  rowBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  rowPreview: { fontSize: 13, fontFamily: "Inter_400Regular", color: C.textSecondary, flex: 1, marginRight: 8 },
+  rowPreviewEmpty: { color: C.tabIconDefault, fontStyle: "italic" },
+  badge: {
+    backgroundColor: C.primary, borderRadius: 10,
+    minWidth: 20, height: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 5,
+  },
+  badgeText: { fontSize: 11, fontFamily: "Inter_700Bold", color: "#fff" },
+  separator: { height: 1, backgroundColor: C.surfaceBorder, marginLeft: 74 },
   empty: { alignItems: "center", paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: C.textSecondary },
-  emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: C.tabIconDefault },
-  fechaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 10 },
-  fechaLine: { flex: 1, height: 1, backgroundColor: C.surfaceBorder },
-  fechaText: { fontSize: 11, fontFamily: "Inter_500Medium", color: C.textSecondary },
-  bubbleWrap: { marginVertical: 3, maxWidth: "80%" },
-  bubbleMioWrap: { alignSelf: "flex-end", alignItems: "flex-end" },
-  bubbleAjenoWrap: { alignSelf: "flex-start", alignItems: "flex-start" },
-  senderName: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: C.primary, marginBottom: 3, marginLeft: 4 },
-  bubble: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-  bubbleMio: { backgroundColor: C.primary, borderBottomRightRadius: 4 },
-  bubbleAjeno: { backgroundColor: C.surface, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: C.surfaceBorder },
-  bubbleText: { fontSize: 15, fontFamily: "Inter_400Regular", lineHeight: 21 },
-  bubbleTextMio: { color: "#fff" },
-  bubbleTextAjeno: { color: C.text },
-  hora: { fontSize: 10, fontFamily: "Inter_400Regular", marginTop: 3, color: C.tabIconDefault },
-  horaMio: { marginRight: 4 },
-  horaAjeno: { marginLeft: 4 },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: C.surfaceBorder,
-    backgroundColor: C.surface,
-  },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
-    backgroundColor: C.background,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: C.text,
-    fontFamily: "Inter_400Regular",
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
-  },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: C.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sendBtnDisabled: { opacity: 0.4 },
+  emptyText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: C.tabIconDefault },
 });

@@ -144,3 +144,39 @@ export async function eliminarExcelPendiente(codigo: string): Promise<void> {
   await apiFetch(`/tiendas/${encodeURIComponent(codigo)}/excel`, { method: "DELETE" });
 }
 
+// ─── Mensajes / Chat ───────────────────────────────────────────────────────
+
+export interface MensajeAPI {
+  id: number;
+  deTienda: string;
+  paraTienda: string | null;
+  texto: string;
+  leido: boolean;
+  creadoAt: string;
+}
+
+export interface ConversacionAPI {
+  contraparte: string;
+  ultimoMensaje: MensajeAPI;
+  noLeidos: number;
+}
+
+export async function obtenerConversaciones(yo: string): Promise<ConversacionAPI[]> {
+  return apiFetch<ConversacionAPI[]>(`/mensajes/conversaciones?yo=${encodeURIComponent(yo)}`);
+}
+
+export async function obtenerMensajesConversacion(yo: string, con: string, desde = 0): Promise<MensajeAPI[]> {
+  return apiFetch<MensajeAPI[]>(`/mensajes/conversacion?yo=${encodeURIComponent(yo)}&con=${encodeURIComponent(con)}&desde=${desde}`);
+}
+
+export async function enviarMensaje(deTienda: string, texto: string, paraTienda?: string): Promise<MensajeAPI> {
+  return apiFetch<MensajeAPI>("/mensajes", {
+    method: "POST",
+    body: JSON.stringify({ deTienda, texto, paraTienda }),
+  });
+}
+
+export async function marcarMensajesLeidos(yo: string, con: string): Promise<void> {
+  await apiFetch(`/mensajes/marcarLeidos?yo=${encodeURIComponent(yo)}&con=${encodeURIComponent(con)}`, { method: "PATCH" });
+}
+

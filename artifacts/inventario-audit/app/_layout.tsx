@@ -69,6 +69,7 @@ function RootLayoutNav() {
       <Stack.Screen name="setup" options={{ headerShown: false }} />
       <Stack.Screen name="boss-login" options={{ headerShown: false }} />
       <Stack.Screen name="boss" options={{ headerShown: false }} />
+      <Stack.Screen name="chat-room" options={{ headerShown: false }} />
     </Stack>
   );
 }
