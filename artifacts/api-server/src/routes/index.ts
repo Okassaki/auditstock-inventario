@@ -3,6 +3,7 @@ import healthRouter from "./health";
 import tiendasRouter from "./tiendas";
 import mensajesRouter from "./mensajes";
 import pushTokensRouter from "./pushTokens";
+import uploadRouter from "./upload";
 
 const router: IRouter = Router();
 
@@ -10,5 +11,6 @@ router.use(healthRouter);
 router.use(tiendasRouter);
 router.use(mensajesRouter);
 router.use(pushTokensRouter);
+router.use(uploadRouter);
 
 export default router;

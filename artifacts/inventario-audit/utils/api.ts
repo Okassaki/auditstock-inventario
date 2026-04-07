@@ -153,6 +153,10 @@ export interface MensajeAPI {
   texto: string;
   leido: boolean;
   creadoAt: string;
+  adjuntoUrl?: string | null;
+  adjuntoTipo?: "imagen" | "documento" | "contacto" | null;
+  adjuntoNombre?: string | null;
+  reenviado?: boolean;
 }
 
 export interface ConversacionAPI {
@@ -169,10 +173,18 @@ export async function obtenerMensajesConversacion(yo: string, con: string, desde
   return apiFetch<MensajeAPI[]>(`/mensajes/conversacion?yo=${encodeURIComponent(yo)}&con=${encodeURIComponent(con)}&desde=${desde}`);
 }
 
-export async function enviarMensaje(deTienda: string, texto: string, paraTienda?: string): Promise<MensajeAPI> {
+export async function enviarMensaje(
+  deTienda: string,
+  texto: string,
+  paraTienda?: string,
+  adjuntoUrl?: string,
+  adjuntoTipo?: "imagen" | "documento" | "contacto",
+  adjuntoNombre?: string,
+  reenviado?: boolean,
+): Promise<MensajeAPI> {
   return apiFetch<MensajeAPI>("/mensajes", {
     method: "POST",
-    body: JSON.stringify({ deTienda, texto, paraTienda }),
+    body: JSON.stringify({ deTienda, texto, paraTienda, adjuntoUrl, adjuntoTipo, adjuntoNombre, reenviado }),
   });
 }
 

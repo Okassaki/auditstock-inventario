@@ -7,10 +7,11 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as Notifications from "expo-notifications";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Updates from "expo-updates";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Alert, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -20,6 +21,17 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseContext";
 import { StoreConfigProvider, useStoreConfig } from "@/context/StoreConfigContext";
 import { BossConfigProvider, useBossConfig } from "@/context/BossConfigContext";
+import { registerForPushNotificationsAsync } from "@/utils/notifications";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 SplashScreen.preventAutoHideAsync();
 
@@ -32,6 +44,34 @@ function RootLayoutNav() {
   const { bossAuthenticated, isLoading: bossLoading } = useBossConfig();
   const router = useRouter();
   const segments = useSegments();
+  const notifListenerRef = useRef<Notifications.Subscription | null>(null);
+
+  // Registrar push token cuando la tienda o el jefe están listos
+  useEffect(() => {
+    if (storeLoading || bossLoading) return;
+    let codigo: string | null = null;
+    if (bossAuthenticated) codigo = "JEFE";
+    else if (storeConfig) codigo = storeConfig.codigo;
+    if (codigo) registerForPushNotificationsAsync(codigo).catch(() => {});
+  }, [storeConfig, bossAuthenticated, storeLoading, bossLoading]);
+
+  // Manejar taps en notificaciones
+  useEffect(() => {
+    notifListenerRef.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, string> | undefined;
+      if (!data) return;
+      const { deTienda, paraTienda } = data;
+      if (!deTienda) return;
+      const con = paraTienda === "GENERAL" || !paraTienda ? "GENERAL" : deTienda;
+      const conNombre = con === "GENERAL" ? "General" : deTienda;
+      if (bossAuthenticated) {
+        router.push({ pathname: "/boss/chat-room", params: { con, conNombre } });
+      } else if (storeConfig) {
+        router.push({ pathname: "/chat-room", params: { yo: storeConfig.codigo, con, conNombre } });
+      }
+    });
+    return () => { notifListenerRef.current?.remove(); };
+  }, [bossAuthenticated, storeConfig, router]);
 
   useEffect(() => {
     if (storeLoading || bossLoading) return;

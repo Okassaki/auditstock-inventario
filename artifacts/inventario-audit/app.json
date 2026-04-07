@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.auditstock.inventario",
-      "versionCode": 6,
+      "versionCode": 7,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
@@ -30,7 +30,11 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_CONTACTS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -68,6 +72,20 @@
         "expo-document-picker",
         {
           "iCloudContainerEnvironment": "Production"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#00D4FF",
+          "androidMode": "default",
+          "androidCollapsedTitle": "AuditStock"
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "La app necesita acceso a tus contactos para enviarlos en el chat."
         }
       ]
     ],

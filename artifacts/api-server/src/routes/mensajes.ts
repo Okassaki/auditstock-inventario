@@ -1,14 +1,43 @@
 import { Router, type IRouter } from "express";
-import { db, mensajesTable } from "@workspace/db";
-import { eq, or, isNull, desc, and, gt } from "drizzle-orm";
+import { db, mensajesTable, pushTokensTable } from "@workspace/db";
+import { eq, or, isNull, desc, and, gt, ne } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
 
+type MensajeRow = typeof mensajesTable.$inferSelect;
+
+async function sendPushNotifications(msg: MensajeRow) {
+  const { deTienda, paraTienda, texto, adjuntoTipo, reenviado } = msg;
+  const preview = adjuntoTipo === "imagen" ? "📷 Imagen" : adjuntoTipo === "documento" ? "📎 Documento" : adjuntoTipo === "contacto" ? "👤 Contacto" : texto || "";
+  const title = `${reenviado ? "↩ Reenviado • " : ""}${deTienda}`;
+
+  let tokens: string[] = [];
+  if (paraTienda) {
+    const rows = await db.select().from(pushTokensTable).where(eq(pushTokensTable.tiendaCodigo, paraTienda));
+    tokens = rows.map((r) => r.token);
+  } else {
+    const rows = await db.select().from(pushTokensTable).where(ne(pushTokensTable.tiendaCodigo, deTienda));
+    tokens = rows.map((r) => r.token);
+  }
+  if (tokens.length === 0) return;
+
+  const messages = tokens.map((to) => ({ to, title, body: preview, sound: "default", data: { deTienda, paraTienda: paraTienda ?? "GENERAL" } }));
+  await fetch("https://exp.host/--/api/v2/push/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json", "Accept-Encoding": "gzip, deflate" },
+    body: JSON.stringify(messages),
+  });
+}
+
 const enviarSchema = z.object({
   deTienda: z.string().min(1),
   paraTienda: z.string().min(1).optional(),
-  texto: z.string().min(1).max(1000),
+  texto: z.string().max(1000).default(""),
+  adjuntoUrl: z.string().url().optional(),
+  adjuntoTipo: z.enum(["imagen", "documento", "contacto"]).optional(),
+  adjuntoNombre: z.string().max(255).optional(),
+  reenviado: z.boolean().optional().default(false),
 });
 
 // Enviar mensaje
@@ -19,11 +48,19 @@ router.post("/mensajes", async (req, res) => {
       deTienda: body.deTienda,
       paraTienda: body.paraTienda ?? null,
       texto: body.texto,
+      adjuntoUrl: body.adjuntoUrl ?? null,
+      adjuntoTipo: body.adjuntoTipo ?? null,
+      adjuntoNombre: body.adjuntoNombre ?? null,
+      reenviado: body.reenviado ?? false,
     }).returning();
+
+    // Enviar push notifications de forma asíncrona
+    sendPushNotifications(msg).catch((e) => console.error("Push error:", e));
+
     res.status(201).json(msg);
   } catch (err: any) {
     if (err?.name === "ZodError") {
-      res.status(400).json({ error: "Datos inválidos" });
+      res.status(400).json({ error: "Datos inválidos", detail: err.message });
       return;
     }
     console.error("Error al enviar mensaje:", err);
