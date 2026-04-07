@@ -12,6 +12,8 @@ import {
 } from "react-native";
 import { obtenerConversaciones, obtenerTiendas, type ConversacionAPI, type TiendaAPI } from "@/utils/api";
 
+type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
+
 const BOSS_COLOR = "#8B5CF6";
 const BG = "#0D0A1E";
 const SURFACE = "#1A1530";
@@ -34,7 +36,7 @@ function formatTime(iso: string) {
 interface ContactItem {
   id: string;
   nombre: string;
-  icono: string;
+  icono: FeatherIconName;
   ultimoMensaje?: ConversacionAPI["ultimoMensaje"];
   noLeidos: number;
   fijo?: boolean;
@@ -138,7 +140,7 @@ export default function BossMensajesScreen() {
     return (
       <TouchableOpacity style={styles.row} onPress={() => abrirChat(item)} activeOpacity={0.7}>
         <View style={[styles.avatar, item.fijo && { backgroundColor: `${BOSS_COLOR}25` }]}>
-          <Feather name={item.icono as any} size={18} color={item.fijo ? BOSS_COLOR : TEXT_SEC} />
+          <Feather name={item.icono} size={18} color={item.fijo ? BOSS_COLOR : TEXT_SEC} />
         </View>
         <View style={styles.rowInfo}>
           <View style={styles.rowTop}>

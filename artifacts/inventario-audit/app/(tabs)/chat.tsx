@@ -11,8 +11,10 @@ import {
   View,
 } from "react-native";
 import { useStoreConfig } from "@/context/StoreConfigContext";
-import { obtenerConversaciones, obtenerTiendas, type ConversacionAPI, type TiendaAPI } from "@/utils/api";
+import { obtenerConversaciones, obtenerTiendas, type ConversacionAPI } from "@/utils/api";
 import { Colors } from "@/constants/colors";
+
+type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
 
 const C = Colors.dark;
 const POLL = 10000;
@@ -27,7 +29,7 @@ function formatTime(iso: string) {
 interface ContactItem {
   id: string;
   nombre: string;
-  icono: string;
+  icono: FeatherIconName;
   ultimoMensaje?: ConversacionAPI["ultimoMensaje"];
   noLeidos: number;
   fijo?: boolean;
@@ -134,7 +136,7 @@ export default function ChatListScreen() {
     return (
       <TouchableOpacity style={styles.row} onPress={() => abrirChat(item)} activeOpacity={0.7}>
         <View style={[styles.avatar, item.fijo && { backgroundColor: C.primary + "25" }]}>
-          <Feather name={item.icono as any} size={18} color={item.fijo ? C.primary : C.textSecondary} />
+          <Feather name={item.icono} size={18} color={item.fijo ? C.primary : C.textSecondary} />
         </View>
         <View style={styles.rowInfo}>
           <View style={styles.rowTop}>
