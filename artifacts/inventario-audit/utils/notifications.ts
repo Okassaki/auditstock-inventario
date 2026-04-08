@@ -1,13 +1,32 @@
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import { API_URL } from "./api";
 
-export async function registerForPushNotificationsAsync(tiendaCodigo: string): Promise<void> {
-  if (!Device.isDevice) return;
+export type PushRegResult =
+  | { ok: true; token: string }
+  | { ok: false; reason: "not_device" | "permission_denied" | "token_error" | "network_error"; detail?: string };
+
+async function reportToServer(tiendaCodigo: string, result: PushRegResult) {
+  try {
+    await fetch(`${API_URL}/push-debug`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tiendaCodigo, ...result, platform: Platform.OS, ts: new Date().toISOString() }),
+    });
+  } catch {}
+}
+
+export async function registerForPushNotificationsAsync(
+  tiendaCodigo: string,
+): Promise<PushRegResult> {
+  if (!Device.isDevice) {
+    const r: PushRegResult = { ok: false, reason: "not_device" };
+    await reportToServer(tiendaCodigo, r);
+    return r;
+  }
 
   if (Platform.OS === "android") {
-    // Canal para mensajes
     await Notifications.setNotificationChannelAsync("mensajes", {
       name: "Mensajes",
       importance: Notifications.AndroidImportance.MAX,
@@ -16,7 +35,6 @@ export async function registerForPushNotificationsAsync(tiendaCodigo: string): P
       sound: "default",
       enableVibrate: true,
     });
-    // Canal para llamadas
     await Notifications.setNotificationChannelAsync("llamadas", {
       name: "Llamadas",
       importance: Notifications.AndroidImportance.MAX,
@@ -33,16 +51,35 @@ export async function registerForPushNotificationsAsync(tiendaCodigo: string): P
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
   }
-  if (finalStatus !== "granted") return;
 
-  const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId: "82653458-4336-45d4-9b1d-a3c6410411ca",
-  });
-  const token = tokenData.data;
+  if (finalStatus !== "granted") {
+    const r: PushRegResult = { ok: false, reason: "permission_denied", detail: `status=${finalStatus}` };
+    await reportToServer(tiendaCodigo, r);
+    return r;
+  }
 
-  await fetch(`${API_URL}/push-token/${encodeURIComponent(tiendaCodigo)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
-  });
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: "82653458-4336-45d4-9b1d-a3c6410411ca",
+    });
+    const token = tokenData.data;
+
+    await fetch(`${API_URL}/push-token/${encodeURIComponent(tiendaCodigo)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+
+    await reportToServer(tiendaCodigo, { ok: true, token });
+    return { ok: true, token };
+  } catch (e: unknown) {
+    const detail = e instanceof Error ? e.message : String(e);
+    const r: PushRegResult = { ok: false, reason: "token_error", detail };
+    await reportToServer(tiendaCodigo, r);
+    return r;
+  }
+}
+
+export async function openNotificationSettings() {
+  await Linking.openSettings();
 }

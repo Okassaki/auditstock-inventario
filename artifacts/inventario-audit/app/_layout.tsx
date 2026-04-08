@@ -23,7 +23,7 @@ import { BossConfigProvider, useBossConfig } from "@/context/BossConfigContext";
 import { CallProvider, useCall, type IncomingCallInfo } from "@/context/CallContext";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
-import { registerForPushNotificationsAsync } from "@/utils/notifications";
+import { registerForPushNotificationsAsync, openNotificationSettings } from "@/utils/notifications";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -56,9 +56,20 @@ function RootLayoutNav() {
     if (bossAuthenticated) codigo = "JEFE";
     else if (storeConfig) codigo = storeConfig.codigo;
     if (codigo) {
-      registerForPushNotificationsAsync(codigo).catch((err) => {
-        console.warn("[push] Error registrando token:", err);
-      });
+      registerForPushNotificationsAsync(codigo)
+        .then((result) => {
+          if (!result.ok && result.reason === "permission_denied") {
+            Alert.alert(
+              "Notificaciones desactivadas",
+              "Para recibir mensajes y llamadas cuando el app está cerrado, habilitá las notificaciones en Configuración del sistema.",
+              [
+                { text: "Ahora no", style: "cancel" },
+                { text: "Ir a Configuración", onPress: () => openNotificationSettings() },
+              ],
+            );
+          }
+        })
+        .catch((err) => console.warn("[push]", err));
     }
   }, [storeConfig, bossAuthenticated, storeLoading, bossLoading]);
 

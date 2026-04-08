@@ -5,6 +5,11 @@ import { z } from "zod";
 
 const router: IRouter = Router();
 
+router.post("/push-debug", (req, res) => {
+  console.log("[push-debug]", JSON.stringify(req.body));
+  res.json({ ok: true });
+});
+
 const schema = z.object({
   token: z.string().min(1),
 });
