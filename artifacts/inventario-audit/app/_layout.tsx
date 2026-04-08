@@ -78,14 +78,16 @@ function RootLayoutNav() {
   useEffect(() => {
     if (storeLoading || bossLoading) return;
 
-    const inBossMain  = segments[0] === "boss";       // tabs del jefe
-    const inBossLogin = segments[0] === "boss-login"; // pantalla de login del jefe
-    const inBoss      = inBossMain || inBossLogin;
-    const inSetup     = segments[0] === "setup";
+    const inBossMain   = segments[0] === "boss";            // tabs del jefe
+    const inBossLogin  = segments[0] === "boss-login";      // pantalla de login del jefe
+    const inBoss       = inBossMain || inBossLogin;
+    const inSetup      = segments[0] === "setup";
+    // Rutas accesibles desde cualquier modo (boss o tienda)
+    const inShared     = segments[0] === "ajustes-sonido" || segments[0] === "chat-room";
 
     if (bossAuthenticated) {
-      // Autenticado: si no está en las tabs de boss, llevarlos ahí
-      if (!inBossMain) router.replace("/boss");
+      // Autenticado como jefe: permitir rutas del jefe y rutas compartidas
+      if (!inBossMain && !inShared) router.replace("/boss");
       return;
     }
 
