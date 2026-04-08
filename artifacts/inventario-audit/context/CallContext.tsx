@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AppState, Platform, Vibration } from "react-native";
+import { AppState, DeviceEventEmitter, Platform, Vibration } from "react-native";
 import { playCallRingtone, stopRingtone } from "@/utils/ringtone";
 import { useBossConfig } from "./BossConfigContext";
 import { useStoreConfig } from "./StoreConfigContext";
@@ -132,7 +132,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         try {
           const msg = JSON.parse(event.data as string);
 
-          if (msg.type === "call_offer") {
+          if (msg.type === "new_message") {
+            DeviceEventEmitter.emit("chatNewMessage", {
+              deTienda: msg.deTienda,
+              paraTienda: msg.paraTienda,
+            });
+          } else if (msg.type === "call_offer") {
             const info: IncomingCallInfo = {
               from: msg.from,
               fromName: msg.fromName ?? msg.from,

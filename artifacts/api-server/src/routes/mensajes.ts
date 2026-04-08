@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, mensajesTable, pushTokensTable } from "@workspace/db";
 import { eq, or, isNull, desc, and, gt, ne, sql as drizzleSql } from "drizzle-orm";
 import { z } from "zod";
+import { broadcastNewMessage } from "../lib/signaling";
 
 const router: IRouter = Router();
 
@@ -61,6 +62,9 @@ router.post("/mensajes", async (req, res) => {
       adjuntoNombre: body.adjuntoNombre ?? null,
       reenviado: body.reenviado ?? false,
     }).returning();
+
+    // Notificar en tiempo real via WebSocket
+    broadcastNewMessage(msg.deTienda, msg.paraTienda ?? null);
 
     // Enviar push notifications de forma asíncrona
     sendPushNotifications(msg).catch((e) => console.error("Push error:", e));

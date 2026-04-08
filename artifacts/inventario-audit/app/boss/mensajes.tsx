@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  DeviceEventEmitter,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -71,7 +72,12 @@ export default function BossMensajesScreen() {
   useEffect(() => {
     fetchAll();
     const interval = setInterval(() => fetchAll(), POLL);
-    return () => clearInterval(interval);
+    // Actualización instantánea via WebSocket
+    const sub = DeviceEventEmitter.addListener("chatNewMessage", () => fetchAll());
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [fetchAll]);
 
   const convMap = new Map(conversaciones.map((c) => [c.contraparte, c]));

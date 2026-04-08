@@ -5,6 +5,24 @@ import { eq } from "drizzle-orm";
 
 const clients = new Map<string, WebSocket>();
 
+export function broadcastNewMessage(deTienda: string, paraTienda: string | null) {
+  const payload = JSON.stringify({ type: "new_message", deTienda, paraTienda });
+  if (paraTienda) {
+    // Mensaje directo — notificar solo al destinatario
+    const target = clients.get(paraTienda);
+    if (target && target.readyState === WebSocket.OPEN) {
+      target.send(payload);
+    }
+  } else {
+    // Broadcast general — notificar a todos menos al remitente
+    for (const [codigo, ws] of clients) {
+      if (codigo !== deTienda && ws.readyState === WebSocket.OPEN) {
+        ws.send(payload);
+      }
+    }
+  }
+}
+
 async function sendCallPushNotification(
   to: string,
   msg: Record<string, unknown>,

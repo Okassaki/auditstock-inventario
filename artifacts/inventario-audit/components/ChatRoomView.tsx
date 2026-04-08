@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  DeviceEventEmitter,
   FlatList,
   Keyboard,
   Modal,
@@ -25,6 +26,7 @@ import {
 import { useKeyboardAnimatedHeight } from "@/utils/useKeyboardHeight";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  API_URL,
   eliminarMensaje,
   enviarMensaje,
   marcarMensajesLeidos,
@@ -78,9 +80,7 @@ interface Props {
 
 const POLL = 5000;
 
-const API_BASE =
-  (process.env.EXPO_PUBLIC_API_URL as string | undefined) ??
-  `https://${process.env.EXPO_PUBLIC_DOMAIN as string}/api`;
+const API_BASE = API_URL;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -222,7 +222,12 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
     fetchMsgs(true);
     marcarMensajesLeidos(yo, con).catch(() => {});
     const interval = setInterval(() => fetchMsgs(false), POLL);
-    return () => clearInterval(interval);
+    // Actualización instantánea cuando llega un mensaje nuevo via WebSocket
+    const sub = DeviceEventEmitter.addListener("chatNewMessage", () => fetchMsgs(false));
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [fetchMsgs, yo, con]);
 
   // ── Adjuntos panel ──────────────────────────────────────────────────────
