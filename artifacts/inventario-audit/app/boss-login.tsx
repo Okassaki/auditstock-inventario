@@ -75,7 +75,7 @@ export default function BossLoginScreen() {
         if (value === pin) {
           await setupPin(pin);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          router.replace("/boss");
+          // La navegación a /boss la maneja _layout.tsx al detectar bossAuthenticated=true
         } else {
           triggerError("Los PINs no coinciden. Intentá de nuevo.");
           setPin("");
@@ -87,7 +87,7 @@ export default function BossLoginScreen() {
       const ok = authenticate(value);
       if (ok) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace("/boss");
+        // La navegación a /boss la maneja _layout.tsx al detectar bossAuthenticated=true
       } else {
         triggerError("PIN incorrecto");
         setPin("");

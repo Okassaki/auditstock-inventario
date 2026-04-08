@@ -78,27 +78,26 @@ function RootLayoutNav() {
   useEffect(() => {
     if (storeLoading || bossLoading) return;
 
-    // inBoss incluye AMBAS pantallas: boss-login y boss tabs
-    const inBoss      = segments[0] === "boss" || segments[0] === "boss-login";
-    const inBossMain  = segments[0] === "boss"; // sólo las tabs del jefe (no el login)
+    const inBossMain  = segments[0] === "boss";       // tabs del jefe
+    const inBossLogin = segments[0] === "boss-login"; // pantalla de login del jefe
+    const inBoss      = inBossMain || inBossLogin;
     const inSetup     = segments[0] === "setup";
 
     if (bossAuthenticated) {
-      // No redirigir si ya está en cualquier pantalla de boss (incluyendo boss-login)
-      // boss-login.tsx maneja su propia navegación hacia /boss
-      if (!inBoss) router.replace("/boss");
+      // Autenticado: si no está en las tabs de boss, llevarlos ahí
+      if (!inBossMain) router.replace("/boss");
       return;
     }
 
-    // Sin autenticar y dentro de las tabs del jefe → redirigir afuera
-    // (boss-login está excluido: el usuario está ingresando su PIN)
+    // No autenticado:
     if (inBossMain) {
-      if (storeConfig) router.replace("/(tabs)");
-      else router.replace("/setup");
+      // Llegó a las tabs sin autenticar (race condition o navegación directa)
+      // → mandarlo al login del jefe, no al setup
+      router.replace("/boss-login");
       return;
     }
 
-    if (!storeConfig && !inSetup && !inBoss) {
+    if (!storeConfig && !inSetup && !inBossLogin) {
       router.replace("/setup");
     } else if (storeConfig && inSetup) {
       router.replace("/(tabs)");
