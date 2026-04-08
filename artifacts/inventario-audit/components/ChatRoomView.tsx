@@ -456,52 +456,64 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
 
   function handleEliminar() {
     if (seleccionados.size === 0) return;
-    Alert.alert(
-      "Eliminar mensaje",
-      seleccionados.size > 1
-        ? `¿Eliminar ${seleccionados.size} mensajes?`
-        : "¿Cómo quieres eliminar este mensaje?",
-      [
-        {
-          text: "Eliminar para mí",
-          onPress: async () => {
-            setEliminando(true);
-            const ids = Array.from(seleccionados);
-            for (const id of ids) {
-              await eliminarMensaje(id, "yo", yo).catch(() => {});
-            }
-            setMsgs((prev) =>
-              prev.map((m) =>
-                seleccionados.has(m.id)
-                  ? { ...m, eliminadosPara: [...(m.eliminadosPara ?? []), yo] }
-                  : m
-              )
-            );
-            setEliminando(false);
-            cancelarSeleccion();
-          },
-        },
-        {
-          text: "Eliminar para todos",
-          style: "destructive",
-          onPress: async () => {
-            setEliminando(true);
-            const ids = Array.from(seleccionados);
-            for (const id of ids) {
-              await eliminarMensaje(id, "todos", yo).catch(() => {});
-            }
-            setMsgs((prev) =>
-              prev.map((m) =>
-                seleccionados.has(m.id) ? { ...m, eliminadoTodos: true } : m
-              )
-            );
-            setEliminando(false);
-            cancelarSeleccion();
-          },
-        },
-        { text: "Cancelar", style: "cancel" },
-      ]
+
+    // Solo se puede "eliminar para todos" si TODOS los mensajes seleccionados son propios
+    const todosPropos = Array.from(seleccionados).every(
+      (id) => msgs.find((m) => m.id === id)?.deTienda === yo
     );
+
+    const count = seleccionados.size;
+    const titulo = "Eliminar mensaje" + (count > 1 ? `s (${count})` : "");
+    const cuerpo = todosPropos
+      ? "¿Cómo quieres eliminar?"
+      : "Solo podés eliminar mensajes ajenos para vos mismo.";
+
+    const botones: Parameters<typeof Alert.alert>[2] = [
+      {
+        text: "Eliminar para mí",
+        onPress: async () => {
+          setEliminando(true);
+          const ids = Array.from(seleccionados);
+          for (const id of ids) {
+            await eliminarMensaje(id, "yo", yo).catch(() => {});
+          }
+          setMsgs((prev) =>
+            prev.map((m) =>
+              seleccionados.has(m.id)
+                ? { ...m, eliminadosPara: [...(m.eliminadosPara ?? []), yo] }
+                : m
+            )
+          );
+          setEliminando(false);
+          cancelarSeleccion();
+        },
+      },
+      ...(todosPropos
+        ? [
+            {
+              text: "Eliminar para todos",
+              style: "destructive" as const,
+              onPress: async () => {
+                setEliminando(true);
+                const ids = Array.from(seleccionados);
+                for (const id of ids) {
+                  await eliminarMensaje(id, "todos", yo).catch(() => {});
+                }
+                setMsgs((prev) =>
+                  prev.map((m) =>
+                    seleccionados.has(m.id) ? { ...m, eliminadoTodos: true } : m
+                  )
+                );
+                setEliminando(false);
+                cancelarSeleccion();
+              },
+            },
+          ]
+        : []),
+      { text: "Cancelar", style: "cancel" as const },
+    ];
+
+    Alert.alert(titulo, cuerpo, botones);
   }
 
   async function reenviarA(destino: string, _destinoNombre: string) {

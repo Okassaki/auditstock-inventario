@@ -204,6 +204,14 @@ router.delete("/mensajes/:id", async (req, res) => {
 
   try {
     if (tipo === "todos") {
+      if (!yo) return res.status(400).json({ error: "yo requerido para eliminar para todos" });
+      // Solo el remitente puede eliminar para todos
+      const msg = await db.select({ deTienda: mensajesTable.deTienda })
+        .from(mensajesTable)
+        .where(eq(mensajesTable.id, id))
+        .limit(1);
+      if (!msg.length) return res.status(404).json({ error: "Mensaje no encontrado" });
+      if (msg[0].deTienda !== yo) return res.status(403).json({ error: "Solo podés eliminar tus propios mensajes para todos" });
       await db.update(mensajesTable)
         .set({ eliminadoTodos: true })
         .where(eq(mensajesTable.id, id));
