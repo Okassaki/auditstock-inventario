@@ -143,17 +143,10 @@ async function checkForUpdates() {
     const update = await Updates.checkForUpdateAsync();
     if (update.isAvailable) {
       await Updates.fetchUpdateAsync();
-      Alert.alert(
-        "Nueva versión disponible",
-        "Se descargó una actualización. ¿Reiniciar ahora para aplicarla?",
-        [
-          { text: "Después", style: "cancel" },
-          { text: "Reiniciar", onPress: () => Updates.reloadAsync() },
-        ]
-      );
+      await Updates.reloadAsync();
     }
   } catch {
-    // En desarrollo o sin conexión, ignorar silenciosamente
+    // Sin conexión o en desarrollo, ignorar
   }
 }
 

@@ -4,6 +4,7 @@ import tiendasRouter from "./tiendas";
 import mensajesRouter from "./mensajes";
 import pushTokensRouter from "./pushTokens";
 import uploadRouter from "./upload";
+import callsRouter from "./calls";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(tiendasRouter);
 router.use(mensajesRouter);
 router.use(pushTokensRouter);
 router.use(uploadRouter);
+router.use(callsRouter);
 
 export default router;

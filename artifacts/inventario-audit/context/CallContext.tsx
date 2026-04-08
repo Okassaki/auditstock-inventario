@@ -6,20 +6,22 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AppState, DeviceEventEmitter, Platform, Vibration } from "react-native";
+import { AppState, Platform, Vibration } from "react-native";
 import { playCallRingtone, stopRingtone } from "@/utils/ringtone";
 import { useBossConfig } from "./BossConfigContext";
 import { useStoreConfig } from "./StoreConfigContext";
-
-const API_BASE =
-  (process.env.EXPO_PUBLIC_API_URL as string | undefined) ??
-  "https://439c42d1-136d-446b-bfa8-78b46cf7a994-00-3pt3107uvwsb4.janeway.replit.dev";
-
-const WS_URL = API_BASE.replace(/^https/, "wss").replace(/^http/, "ws") + "/ws";
-const JITSI_SERVER = "https://meet.jit.si";
+import { API_URL } from "@/utils/api";
 
 export type CallType = "audio" | "video";
 export type CallState = "idle" | "outgoing" | "incoming" | "active";
+
+export interface IncomingCallInfo {
+  from: string;
+  fromName: string;
+  type: CallType;
+  roomId: string;
+  offerId?: string;
+}
 
 export interface ActiveCallInfo {
   peerId: string;
@@ -27,13 +29,7 @@ export interface ActiveCallInfo {
   type: CallType;
   roomId: string;
   jitsiUrl: string;
-}
-
-export interface IncomingCallInfo {
-  from: string;
-  fromName: string;
-  type: CallType;
-  roomId: string;
+  offerId?: string;
 }
 
 interface CallContextValue {
@@ -58,6 +54,10 @@ const CallContext = createContext<CallContextValue>({
   triggerIncomingCallFromNotification: () => {},
 });
 
+const JITSI_SERVER = "https://meet.jit.si";
+const OUTGOING_POLL_MS = 2000;
+const INCOMING_POLL_MS = 3000;
+
 function buildJitsiUrl(roomId: string, type: CallType, displayName: string): string {
   const room = `AuditStk${roomId}`;
   const params = [
@@ -72,6 +72,20 @@ function buildJitsiUrl(roomId: string, type: CallType, displayName: string): str
   return `${JITSI_SERVER}/${room}#${params}`;
 }
 
+async function apiPost(path: string, body: object): Promise<unknown> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+async function apiGet(path: string): Promise<unknown> {
+  const res = await fetch(`${API_URL}${path}`);
+  return res.json();
+}
+
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { storeConfig } = useStoreConfig();
   const { bossAuthenticated } = useBossConfig();
@@ -83,9 +97,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [incomingCall, setIncomingCall] = useState<IncomingCallInfo | null>(null);
   const [activeCall, setActiveCall] = useState<ActiveCallInfo | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const outgoingOfferIdRef = useRef<string | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vibrateInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callStateRef = useRef<CallState>("idle");
+  callStateRef.current = callState;
 
   const stopRinging = useCallback(() => {
     stopRingtone().catch(() => {});
@@ -103,84 +119,98 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const sendWS = useCallback((msg: object) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+  const clearPoll = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
   }, []);
+
+  // Polling para llamadas salientes: espera confirmación del destinatario
+  const pollOutgoing = useCallback(
+    (offerId: string) => {
+      clearPoll();
+      const tick = async () => {
+        if (callStateRef.current !== "outgoing") return;
+        try {
+          const data = (await apiGet(`/calls/status/${offerId}`)) as { response: string };
+          if (data.response === "accepted") {
+            const offer = outgoingOfferIdRef.current;
+            if (!offer) return;
+            setCallState("active");
+            return;
+          }
+          if (data.response === "rejected" || data.response === "expired" || data.response === "cancelled") {
+            stopRingtone().catch(() => {});
+            setCallState("idle");
+            setActiveCall(null);
+            return;
+          }
+        } catch {}
+        pollTimerRef.current = setTimeout(tick, OUTGOING_POLL_MS);
+      };
+      pollTimerRef.current = setTimeout(tick, OUTGOING_POLL_MS);
+    },
+    [clearPoll],
+  );
+
+  // Polling para llamadas entrantes: fallback si el push no llegó
+  const pollIncoming = useCallback(() => {
+    clearPoll();
+    const tick = async () => {
+      if (callStateRef.current !== "idle" || !myCode) return;
+      try {
+        const data = await apiGet(`/calls/incoming/${myCode}`);
+        if (data && typeof data === "object") {
+          const offer = data as { offerId?: string; from?: string; fromName?: string; callType?: string; roomId?: string };
+          if (offer.offerId && offer.from && offer.roomId) {
+            setIncomingCall({
+              from: offer.from,
+              fromName: offer.fromName ?? offer.from,
+              type: (offer.callType as CallType) ?? "audio",
+              roomId: offer.roomId,
+              offerId: offer.offerId,
+            });
+            setCallState("incoming");
+            startRinging();
+            return;
+          }
+        }
+      } catch {}
+      pollTimerRef.current = setTimeout(tick, INCOMING_POLL_MS);
+    };
+    pollTimerRef.current = setTimeout(tick, INCOMING_POLL_MS);
+  }, [clearPoll, myCode, startRinging]);
+
+  // Inicia el polling según el estado
+  useEffect(() => {
+    if (callState === "idle" && myCode) {
+      pollIncoming();
+    } else if (callState === "outgoing" && outgoingOfferIdRef.current) {
+      pollOutgoing(outgoingOfferIdRef.current);
+    } else {
+      clearPoll();
+    }
+    return clearPoll;
+  }, [callState, myCode, pollIncoming, pollOutgoing, clearPoll]);
+
+  // Reanudar polling al volver al frente
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active" && callStateRef.current === "idle" && myCode) {
+        pollIncoming();
+      }
+    });
+    return () => sub.remove();
+  }, [myCode, pollIncoming]);
 
   const endCall = useCallback(() => {
     stopRinging();
     setCallState("idle");
     setIncomingCall(null);
     setActiveCall(null);
+    outgoingOfferIdRef.current = null;
   }, [stopRinging]);
-
-  const connect = useCallback(() => {
-    if (!myCode) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-    try {
-      const ws = new WebSocket(WS_URL);
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "register", codigo: myCode }));
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data as string);
-
-          if (msg.type === "new_message") {
-            DeviceEventEmitter.emit("chatNewMessage", {
-              deTienda: msg.deTienda,
-              paraTienda: msg.paraTienda,
-            });
-          } else if (msg.type === "call_offer") {
-            const info: IncomingCallInfo = {
-              from: msg.from,
-              fromName: msg.fromName ?? msg.from,
-              type: msg.callType ?? "audio",
-              roomId: msg.roomId,
-            };
-            setIncomingCall(info);
-            setCallState("incoming");
-            startRinging();
-          } else if (msg.type === "call_accepted") {
-            setCallState((prev) => (prev === "outgoing" ? "active" : prev));
-          } else if (msg.type === "call_rejected") {
-            endCall();
-          } else if (msg.type === "call_ended") {
-            endCall();
-          }
-        } catch {}
-      };
-
-      ws.onclose = () => {
-        wsRef.current = null;
-        reconnectTimer.current = setTimeout(() => connect(), 5000);
-      };
-
-      ws.onerror = () => {
-        ws.close();
-      };
-
-      wsRef.current = ws;
-    } catch {}
-  }, [myCode, startRinging, endCall]);
-
-  useEffect(() => {
-    connect();
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") connect();
-    });
-    return () => {
-      sub.remove();
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
 
   const initiateCall = useCallback(
     (peerId: string, peerName: string, type: CallType) => {
@@ -189,23 +219,29 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const jitsiUrl = buildJitsiUrl(roomId, type, myName);
       setActiveCall({ peerId, peerName, type, roomId, jitsiUrl });
       setCallState("outgoing");
-      sendWS({
-        type: "call_offer",
-        to: peerId,
+      apiPost("/calls/offer", {
         from: myCode,
         fromName: myName,
+        to: peerId,
         callType: type,
         roomId,
-      });
+      })
+        .then((res) => {
+          const r = res as { offerId?: string };
+          if (r.offerId) {
+            outgoingOfferIdRef.current = r.offerId;
+            pollOutgoing(r.offerId);
+          }
+        })
+        .catch(() => {});
     },
-    [callState, myCode, myName, sendWS]
+    [callState, myCode, myName, pollOutgoing],
   );
 
   const acceptCall = useCallback(() => {
     if (!incomingCall || !myCode) return;
     stopRinging();
     const jitsiUrl = buildJitsiUrl(incomingCall.roomId, incomingCall.type, myName);
-    sendWS({ type: "call_accepted", to: incomingCall.from, from: myCode, roomId: incomingCall.roomId });
     setActiveCall({
       peerId: incomingCall.from,
       peerName: incomingCall.fromName,
@@ -215,24 +251,28 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     });
     setIncomingCall(null);
     setCallState("active");
-  }, [incomingCall, myCode, myName, sendWS, stopRinging]);
+    if (incomingCall.offerId) {
+      apiPost("/calls/respond", { offerId: incomingCall.offerId, response: "accepted" }).catch(() => {});
+    }
+  }, [incomingCall, myCode, myName, stopRinging]);
 
   const rejectCall = useCallback(() => {
     if (!incomingCall || !myCode) return;
     stopRinging();
-    sendWS({ type: "call_rejected", to: incomingCall.from, from: myCode });
+    if (incomingCall.offerId) {
+      apiPost("/calls/respond", { offerId: incomingCall.offerId, response: "rejected" }).catch(() => {});
+    }
     setIncomingCall(null);
     setCallState("idle");
-  }, [incomingCall, myCode, sendWS, stopRinging]);
+  }, [incomingCall, myCode, stopRinging]);
 
   const endCallWithSignal = useCallback(() => {
-    if (activeCall && myCode) {
-      sendWS({ type: "call_ended", to: activeCall.peerId, from: myCode });
+    if (callState === "outgoing" && outgoingOfferIdRef.current) {
+      apiPost(`/calls/cancel/${outgoingOfferIdRef.current}`, {}).catch(() => {});
     }
     endCall();
-  }, [activeCall, myCode, sendWS, endCall]);
+  }, [callState, endCall]);
 
-  // Llamada iniciada desde push notification (app en background)
   const triggerIncomingCallFromNotification = useCallback(
     (info: IncomingCallInfo) => {
       setCallState((prev) => {
