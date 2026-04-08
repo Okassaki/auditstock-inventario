@@ -24,6 +24,7 @@ import { CallProvider, useCall, type IncomingCallInfo } from "@/context/CallCont
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
 import { registerForPushNotificationsAsync, openNotificationSettings } from "@/utils/notifications";
+import { saveCodigoForBackground, registerBackgroundMessages } from "@/utils/backgroundMessages";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -56,6 +57,11 @@ function RootLayoutNav() {
     if (bossAuthenticated) codigo = "JEFE";
     else if (storeConfig) codigo = storeConfig.codigo;
     if (codigo) {
+      // Guardar código para que el background task lo use cuando el app esté cerrado
+      saveCodigoForBackground(codigo).catch(() => {});
+      // Intentar registrar background fetch (se activa en próximo build que incluya Firebase)
+      registerBackgroundMessages().catch(() => {});
+      // Registrar push token con FCM
       registerForPushNotificationsAsync(codigo)
         .then((result) => {
           if (!result.ok && result.reason === "permission_denied") {
