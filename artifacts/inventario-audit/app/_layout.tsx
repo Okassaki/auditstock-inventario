@@ -20,7 +20,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseContext";
 import { StoreConfigProvider, useStoreConfig } from "@/context/StoreConfigContext";
 import { BossConfigProvider, useBossConfig } from "@/context/BossConfigContext";
-import { CallProvider } from "@/context/CallContext";
+import { CallProvider, useCall, type IncomingCallInfo } from "@/context/CallContext";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
 import { registerForPushNotificationsAsync } from "@/utils/notifications";
@@ -44,6 +44,7 @@ const isWeb = Platform.OS === "web";
 function RootLayoutNav() {
   const { storeConfig, isLoading: storeLoading } = useStoreConfig();
   const { bossAuthenticated, isLoading: bossLoading } = useBossConfig();
+  const { triggerIncomingCallFromNotification } = useCall();
   const router = useRouter();
   const segments = useSegments();
   const notifListenerRef = useRef<Notifications.Subscription | null>(null);
@@ -54,7 +55,11 @@ function RootLayoutNav() {
     let codigo: string | null = null;
     if (bossAuthenticated) codigo = "JEFE";
     else if (storeConfig) codigo = storeConfig.codigo;
-    if (codigo) registerForPushNotificationsAsync(codigo).catch(() => {});
+    if (codigo) {
+      registerForPushNotificationsAsync(codigo).catch((err) => {
+        console.warn("[push] Error registrando token:", err);
+      });
+    }
   }, [storeConfig, bossAuthenticated, storeLoading, bossLoading]);
 
   // Manejar taps en notificaciones
@@ -62,6 +67,20 @@ function RootLayoutNav() {
     notifListenerRef.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as Record<string, string> | undefined;
       if (!data) return;
+
+      // Notificación de llamada entrante
+      if (data.type === "call_offer") {
+        const info: IncomingCallInfo = {
+          from: data.from,
+          fromName: data.fromName ?? data.from,
+          type: (data.callType as "audio" | "video") ?? "audio",
+          roomId: data.roomId,
+        };
+        triggerIncomingCallFromNotification(info);
+        return;
+      }
+
+      // Notificación de mensaje
       const { deTienda, paraTienda } = data;
       if (!deTienda) return;
       const con = paraTienda === "GENERAL" || !paraTienda ? "GENERAL" : deTienda;
@@ -73,7 +92,7 @@ function RootLayoutNav() {
       }
     });
     return () => { notifListenerRef.current?.remove(); };
-  }, [bossAuthenticated, storeConfig, router]);
+  }, [bossAuthenticated, storeConfig, router, triggerIncomingCallFromNotification]);
 
   useEffect(() => {
     if (storeLoading || bossLoading) return;

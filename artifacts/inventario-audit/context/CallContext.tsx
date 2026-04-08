@@ -44,6 +44,7 @@ interface CallContextValue {
   acceptCall: () => void;
   rejectCall: () => void;
   endCall: () => void;
+  triggerIncomingCallFromNotification: (info: IncomingCallInfo) => void;
 }
 
 const CallContext = createContext<CallContextValue>({
@@ -54,6 +55,7 @@ const CallContext = createContext<CallContextValue>({
   acceptCall: () => {},
   rejectCall: () => {},
   endCall: () => {},
+  triggerIncomingCallFromNotification: () => {},
 });
 
 function buildJitsiUrl(roomId: string, type: CallType, displayName: string): string {
@@ -225,6 +227,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     endCall();
   }, [activeCall, myCode, sendWS, endCall]);
 
+  // Llamada iniciada desde push notification (app en background)
+  const triggerIncomingCallFromNotification = useCallback(
+    (info: IncomingCallInfo) => {
+      setCallState((prev) => {
+        if (prev !== "idle") return prev;
+        setIncomingCall(info);
+        startRinging();
+        return "incoming";
+      });
+    },
+    [startRinging],
+  );
+
   return (
     <CallContext.Provider
       value={{
@@ -235,6 +250,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         acceptCall,
         rejectCall,
         endCall: endCallWithSignal,
+        triggerIncomingCallFromNotification,
       }}
     >
       {children}
