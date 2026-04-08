@@ -11,7 +11,7 @@ import {
   Alert,
   Animated,
   FlatList,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useKeyboardAnimatedHeight } from "@/utils/useKeyboardHeight";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   eliminarMensaje,
@@ -147,6 +148,16 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
   const { initiateCall, callState } = useCall();
   const flatRef = useRef<FlatList>(null);
   const ultimoIdRef = useRef(0);
+  const kbHeight = useKeyboardAnimatedHeight();
+
+  // Scroll to bottom when keyboard opens so input stays visible
+  useEffect(() => {
+    const sub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => { setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80); }
+    );
+    return () => sub.remove();
+  }, []);
 
   // Mensajes
   const [msgs, setMsgs] = useState<MensajeAPI[]>([]);
@@ -720,7 +731,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
         </View>
       )}
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}>
+      <Animated.View style={{ flex: 1, paddingBottom: kbHeight }}>
         {loading ? (
           <View style={s.center}><ActivityIndicator color={T.primary} /></View>
         ) : (
@@ -825,7 +836,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
             </View>
           </Animated.View>
         )}
-      </KeyboardAvoidingView>
+      </Animated.View>
 
       {/* Modal de reenvío */}
       <Modal visible={showForwardPicker} transparent animationType="slide" onRequestClose={() => setShowForwardPicker(false)}>
