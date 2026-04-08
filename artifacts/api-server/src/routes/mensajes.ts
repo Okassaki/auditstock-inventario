@@ -22,7 +22,15 @@ async function sendPushNotifications(msg: MensajeRow) {
   }
   if (tokens.length === 0) return;
 
-  const messages = tokens.map((to) => ({ to, title, body: preview, sound: "default", data: { deTienda, paraTienda: paraTienda ?? "GENERAL" } }));
+  const messages = tokens.map((to) => ({
+    to,
+    title,
+    body: preview,
+    sound: "default",
+    channelId: "mensajes",
+    priority: "high",
+    data: { deTienda, paraTienda: paraTienda ?? "GENERAL" },
+  }));
   await fetch("https://exp.host/--/api/v2/push/send", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Accept": "application/json", "Accept-Encoding": "gzip, deflate" },
