@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -55,8 +55,8 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease \
-            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m" \
+          ./gradlew assembleRelease --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=2g" \
             -Dorg.gradle.workers.max=2 \
             --build-cache
           cp app/build/outputs/apk/release/app-release.apk /tmp/AuditStock.apk
