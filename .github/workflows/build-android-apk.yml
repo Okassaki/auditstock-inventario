@@ -1,69 +1,68 @@
 name: Build Android APK
 
-  on:
-    workflow_dispatch:
+on:
+  workflow_dispatch:
 
-  jobs:
-    build:
-      runs-on: ubuntu-latest
-      timeout-minutes: 90
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
 
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        - name: Liberar espacio en disco
-          run: |
-            sudo rm -rf /usr/share/dotnet /opt/ghc
-            sudo apt-get clean
-            df -h
+      - name: Liberar espacio en disco
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc
+          sudo apt-get clean
+          df -h
 
-        - name: Setup Node.js 20
-          uses: actions/setup-node@v4
-          with:
-            node-version: "20"
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-        - name: Install pnpm
-          run: npm install -g pnpm@10
+      - name: Install pnpm
+        run: npm install -g pnpm@10
 
-        - name: Setup JDK 17
-          uses: actions/setup-java@v4
-          with:
-            java-version: "17"
-            distribution: "temurin"
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
 
-        - name: Instalar dependencias
-          run: pnpm install --no-frozen-lockfile
+      - name: Instalar dependencias
+        run: pnpm install --no-frozen-lockfile
 
-        - name: Expo Prebuild
-          env:
-            EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          run: npx expo prebuild --platform android --no-install --clean
+      - name: Expo Prebuild
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx expo prebuild --platform android --no-install --clean
 
-        - name: Cache Gradle
-          uses: actions/cache@v4
-          with:
-            path: |
-              ~/.gradle/caches
-              ~/.gradle/wrapper
-            key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
-            restore-keys: gradle-${{ runner.os }}-
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
 
-        - name: Build APK
-          run: |
-            echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-            cd android
-            chmod +x gradlew
-            ./gradlew assembleRelease --no-daemon \
-              -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m" \
-              -Dorg.gradle.workers.max=2
-            cp app/build/outputs/apk/release/app-release.apk /tmp/AuditStock.apk
+      - name: Build APK
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m" \
+            -Dorg.gradle.workers.max=2
+          cp app/build/outputs/apk/release/app-release.apk /tmp/AuditStock.apk
 
-        - name: Subir APK
-          uses: actions/upload-artifact@v4
-          with:
-            name: AuditStock-v14-${{ github.run_number }}
-            path: /tmp/AuditStock.apk
-            retention-days: 14
-            if-no-files-found: error
-  
+      - name: Subir APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuditStock-v14-${{ github.run_number }}
+          path: /tmp/AuditStock.apk
+          retention-days: 14
+          if-no-files-found: error
