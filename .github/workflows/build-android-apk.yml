@@ -33,7 +33,7 @@ jobs:
           distribution: "temurin"
 
       - name: Instalar dependencias
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --shamefully-hoist
 
       - name: Expo Prebuild
         env:
