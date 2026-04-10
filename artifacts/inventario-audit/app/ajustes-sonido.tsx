@@ -2,10 +2,12 @@ import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as IntentLauncher from "expo-intent-launcher";
+import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Platform,
   ScrollView,
@@ -23,6 +25,10 @@ import {
   getCustomCallUri,
   getCustomMsgName,
   getCustomMsgUri,
+  getSystemCallName,
+  getSystemCallUri,
+  getSystemMsgName,
+  getSystemMsgUri,
   getMsgTone,
   persistAudioFile,
   previewSound,
@@ -30,6 +36,8 @@ import {
   setCustomCall,
   setCustomMsg,
   setMsgTone,
+  setSystemCall,
+  setSystemMsg,
   stopRingtone,
 } from "@/utils/ringtone";
 
@@ -42,6 +50,7 @@ const TEXT        = "#F0F4FF";
 const TEXT_SEC    = "#8B98B8";
 const TEXT_MUTED  = "#4B5563";
 const PRIMARY     = "#00D4FF";
+const GREEN       = "#22C55E";
 
 const CALL_TONES: { label: string; value: CallTone; icon: string }[] = [
   { label: "Classic Ring",  value: "ring1",  icon: "phone-call" },
@@ -57,28 +66,66 @@ const MSG_TONES: { label: string; value: MsgTone; icon: string }[] = [
   { label: "Silencio", value: "silent", icon: "volume-x" },
 ];
 
+const PKG = "com.auditstock.inventario";
+
+async function recreateChannel(
+  channelId: "llamadas" | "mensajes",
+  soundUri: string | null
+) {
+  try {
+    await Notifications.deleteNotificationChannelAsync(channelId);
+  } catch {}
+
+  if (channelId === "llamadas") {
+    await Notifications.setNotificationChannelAsync("llamadas", {
+      name: "Llamadas",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 250, 500],
+      lightColor: "#8B5CF6",
+      sound: soundUri ?? "default",
+      enableVibrate: true,
+    });
+  } else {
+    await Notifications.setNotificationChannelAsync("mensajes", {
+      name: "Mensajes",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#00D4FF",
+      sound: soundUri ?? "default",
+      enableVibrate: true,
+    });
+  }
+}
+
 export default function AjustesSonido() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [callTone,       setCallToneState] = useState<CallTone>("ring1");
-  const [msgTone,        setMsgToneState]  = useState<MsgTone>("ping");
-  const [previewing,     setPreviewing]    = useState<string | null>(null);
-  const [customCallName, setCustomCallName]= useState<string | null>(null);
-  const [customMsgName,  setCustomMsgName] = useState<string | null>(null);
-  const [pickingCall,    setPickingCall]   = useState(false);
-  const [pickingMsg,     setPickingMsg]    = useState(false);
+  const [callTone,        setCallToneState]  = useState<CallTone>("ring1");
+  const [msgTone,         setMsgToneState]   = useState<MsgTone>("ping");
+  const [previewing,      setPreviewing]     = useState<string | null>(null);
+  const [customCallName,  setCustomCallName] = useState<string | null>(null);
+  const [customMsgName,   setCustomMsgName]  = useState<string | null>(null);
+  const [systemCallName,  setSystemCallName] = useState<string | null>(null);
+  const [systemMsgName,   setSystemMsgName]  = useState<string | null>(null);
+  const [pickingCall,     setPickingCall]    = useState(false);
+  const [pickingMsg,      setPickingMsg]     = useState(false);
+  const [pickingSysCall,  setPickingSysCall] = useState(false);
+  const [pickingSysMsg,   setPickingSysMsg]  = useState(false);
 
   useEffect(() => {
     async function load() {
-      const [ct, mt, ccn, cmn] = await Promise.all([
+      const [ct, mt, ccn, cmn, scn, smn] = await Promise.all([
         getCallTone(), getMsgTone(),
         getCustomCallName(), getCustomMsgName(),
+        getSystemCallName(), getSystemMsgName(),
       ]);
       setCallToneState(ct);
       setMsgToneState(mt);
       setCustomCallName(ccn);
       setCustomMsgName(cmn);
+      setSystemCallName(scn);
+      setSystemMsgName(smn);
     }
     load();
     return () => { stopRingtone().catch(() => {}); };
@@ -87,7 +134,7 @@ export default function AjustesSonido() {
   async function selectCallTone(v: CallTone) {
     setCallToneState(v);
     await setCallTone(v);
-    if (v !== "silent" && v !== "custom") {
+    if (v !== "silent" && v !== "custom" && v !== "system") {
       setPreviewing(v);
       await previewSound(v);
       setTimeout(() => setPreviewing(null), 3500);
@@ -97,12 +144,94 @@ export default function AjustesSonido() {
   async function selectMsgTone(v: MsgTone) {
     setMsgToneState(v);
     await setMsgTone(v);
-    if (v !== "silent" && v !== "custom") {
+    if (v !== "silent" && v !== "custom" && v !== "system") {
       setPreviewing(v);
       await previewSound(v);
       setTimeout(() => setPreviewing(null), 2000);
     }
   }
+
+  // ── Sistema: picker nativo de Android ────────────────────────────────────
+
+  async function pickSystemCallTone() {
+    if (Platform.OS !== "android") return;
+    setPickingSysCall(true);
+    try {
+      const result = await IntentLauncher.startActivityAsync(
+        "android.intent.action.RINGTONE_PICKER",
+        {
+          extra: {
+            "android.intent.extra.RINGTONE_TYPE": 1,        // TYPE_RINGTONE
+            "android.intent.extra.RINGTONE_SHOW_SILENT": true,
+            "android.intent.extra.RINGTONE_SHOW_DEFAULT": true,
+            "android.intent.extra.RINGTONE_TITLE": "Tono de llamada",
+          },
+        }
+      );
+      if (result.resultCode === -1) {
+        const uri: string | undefined = result.extra?.["android.intent.extra.RINGTONE_URI"];
+        const name: string = uri
+          ? (uri.split("/").pop() ?? "Tono del sistema")
+          : "Silencio";
+        const finalUri = uri ?? "silent";
+        await setSystemCall(finalUri, name);
+        await setCallTone("system");
+        setSystemCallName(name);
+        setCallToneState("system");
+        if (uri) {
+          setPreviewing("system_call");
+          await previewSound("system", uri);
+          setTimeout(() => setPreviewing(null), 4000);
+        }
+        await recreateChannel("llamadas", uri ?? null);
+      }
+    } catch (e) {
+      Alert.alert("Error", "No se pudo abrir el selector de tonos del sistema.");
+    } finally {
+      setPickingSysCall(false);
+    }
+  }
+
+  async function pickSystemMsgTone() {
+    if (Platform.OS !== "android") return;
+    setPickingSysMsg(true);
+    try {
+      const result = await IntentLauncher.startActivityAsync(
+        "android.intent.action.RINGTONE_PICKER",
+        {
+          extra: {
+            "android.intent.extra.RINGTONE_TYPE": 2,        // TYPE_NOTIFICATION
+            "android.intent.extra.RINGTONE_SHOW_SILENT": true,
+            "android.intent.extra.RINGTONE_SHOW_DEFAULT": true,
+            "android.intent.extra.RINGTONE_TITLE": "Tono de notificación",
+          },
+        }
+      );
+      if (result.resultCode === -1) {
+        const uri: string | undefined = result.extra?.["android.intent.extra.RINGTONE_URI"];
+        const name: string = uri
+          ? (uri.split("/").pop() ?? "Tono del sistema")
+          : "Silencio";
+        const finalUri = uri ?? "silent";
+        await setSystemMsg(finalUri, name);
+        await setMsgTone("system");
+        setSystemMsgName(name);
+        setMsgToneState("system");
+        if (uri) {
+          setPreviewing("system_msg");
+          await previewSound("system", uri);
+          setTimeout(() => setPreviewing(null), 3000);
+        }
+        await recreateChannel("mensajes", uri ?? null);
+      }
+    } catch (e) {
+      Alert.alert("Error", "No se pudo abrir el selector de tonos del sistema.");
+    } finally {
+      setPickingSysMsg(false);
+    }
+  }
+
+  // ── Archivo personalizado ─────────────────────────────────────────────────
 
   async function pickCallAudio() {
     setPickingCall(true);
@@ -154,6 +283,24 @@ export default function AjustesSonido() {
     }
   }
 
+  // ── Previsualización de tonos guardados ───────────────────────────────────
+
+  async function previewSystemCall() {
+    const uri = await getSystemCallUri();
+    if (!uri || uri === "silent") return;
+    setPreviewing("system_call");
+    await previewSound("system", uri);
+    setTimeout(() => setPreviewing(null), 4000);
+  }
+
+  async function previewSystemMsg() {
+    const uri = await getSystemMsgUri();
+    if (!uri || uri === "silent") return;
+    setPreviewing("system_msg");
+    await previewSound("system", uri);
+    setTimeout(() => setPreviewing(null), 3000);
+  }
+
   async function previewCustomCall() {
     const uri = await getCustomCallUri();
     if (!uri) return;
@@ -170,16 +317,17 @@ export default function AjustesSonido() {
     setTimeout(() => setPreviewing(null), 4000);
   }
 
+  // ── Ajustes del sistema Android ───────────────────────────────────────────
+
   async function openChannelSettings(channelId: "llamadas" | "mensajes") {
     if (Platform.OS !== "android") return;
-    const pkg = "com.auditstock.inventario";
     try {
       await IntentLauncher.startActivityAsync(
         "android.settings.CHANNEL_NOTIFICATION_SETTINGS",
         {
-          data: `package:${pkg}`,
+          data: `package:${PKG}`,
           extra: {
-            "android.provider.extra.APP_PACKAGE": pkg,
+            "android.provider.extra.APP_PACKAGE": PKG,
             "android.provider.extra.CHANNEL_ID": channelId,
           },
         }
@@ -191,11 +339,10 @@ export default function AjustesSonido() {
 
   async function openBatterySettings() {
     if (Platform.OS !== "android") return;
-    const pkg = "com.auditstock.inventario";
     try {
       await IntentLauncher.startActivityAsync(
         "android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-        { data: `package:${pkg}` }
+        { data: `package:${PKG}` }
       );
     } catch {
       try {
@@ -205,6 +352,8 @@ export default function AjustesSonido() {
       }
     }
   }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
@@ -217,9 +366,43 @@ export default function AjustesSonido() {
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── Tono de llamada ─────────────────────────────────────────── */}
+        {/* ══ TONO DE LLAMADA ══════════════════════════════════════════════ */}
         <Text style={s.section}>TONO DE LLAMADA ENTRANTE</Text>
 
+        {/* Sistema — picker nativo al estilo WhatsApp */}
+        {Platform.OS === "android" && (
+          <TouchableOpacity
+            style={[s.row, s.systemRow, callTone === "system" && s.rowActive]}
+            onPress={pickSystemCallTone}
+            disabled={pickingSysCall}
+          >
+            <View style={[s.iconBox, callTone === "system" && { backgroundColor: GREEN + "25" }]}>
+              {pickingSysCall
+                ? <ActivityIndicator size={18} color={GREEN} />
+                : <Feather name="smartphone" size={18} color={callTone === "system" ? GREEN : TEXT_SEC} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.rowLabel, callTone === "system" && { color: GREEN }]}>
+                Tonos del sistema
+              </Text>
+              {systemCallName && callTone === "system"
+                ? <Text style={s.subLabel} numberOfLines={1}>{systemCallName}</Text>
+                : <Text style={s.subHint}>Ringtones instalados en el dispositivo</Text>
+              }
+            </View>
+            {callTone === "system" && !pickingSysCall && previewing !== "system_call" && (
+              <TouchableOpacity onPress={previewSystemCall} style={s.playBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Feather name="play" size={15} color={GREEN} />
+              </TouchableOpacity>
+            )}
+            {previewing === "system_call" && <Feather name="volume-2" size={15} color={GREEN} style={{ marginRight: 8 }} />}
+            {callTone === "system"
+              ? <Feather name="check-circle" size={20} color={GREEN} />
+              : <Feather name="chevron-right" size={18} color={TEXT_SEC} />}
+          </TouchableOpacity>
+        )}
+
+        {/* Tonos bundled */}
         {CALL_TONES.map((t) => {
           const active = callTone === t.value;
           return (
@@ -235,7 +418,7 @@ export default function AjustesSonido() {
           );
         })}
 
-        {/* Desde dispositivo — llamada */}
+        {/* Archivo del dispositivo — llamada */}
         <TouchableOpacity
           style={[s.row, s.customRow, callTone === "custom" && s.rowActive]}
           onPress={pickCallAudio}
@@ -248,11 +431,11 @@ export default function AjustesSonido() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[s.rowLabel, callTone === "custom" && { color: PRIMARY }]}>
-              Elegir desde el dispositivo
+              Elegir archivo de audio
             </Text>
             {customCallName && callTone === "custom"
               ? <Text style={s.subLabel} numberOfLines={1}>{customCallName}</Text>
-              : <Text style={s.subHint}>Ringtones · Música · Descargas</Text>
+              : <Text style={s.subHint}>MP3, AAC, WAV, OGG…</Text>
             }
           </View>
           {callTone === "custom" && !pickingCall && previewing !== "custom_call" && (
@@ -267,9 +450,43 @@ export default function AjustesSonido() {
           }
         </TouchableOpacity>
 
-        {/* ── Tono de mensajes ─────────────────────────────────────────── */}
+        {/* ══ TONO DE MENSAJES ═════════════════════════════════════════════ */}
         <Text style={[s.section, { marginTop: 28 }]}>TONO DE NOTIFICACIÓN DE MENSAJES</Text>
 
+        {/* Sistema — picker nativo al estilo WhatsApp */}
+        {Platform.OS === "android" && (
+          <TouchableOpacity
+            style={[s.row, s.systemRow, msgTone === "system" && s.rowActive]}
+            onPress={pickSystemMsgTone}
+            disabled={pickingSysMsg}
+          >
+            <View style={[s.iconBox, msgTone === "system" && { backgroundColor: GREEN + "25" }]}>
+              {pickingSysMsg
+                ? <ActivityIndicator size={18} color={GREEN} />
+                : <Feather name="smartphone" size={18} color={msgTone === "system" ? GREEN : TEXT_SEC} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.rowLabel, msgTone === "system" && { color: GREEN }]}>
+                Tonos del sistema
+              </Text>
+              {systemMsgName && msgTone === "system"
+                ? <Text style={s.subLabel} numberOfLines={1}>{systemMsgName}</Text>
+                : <Text style={s.subHint}>Notificaciones instaladas en el dispositivo</Text>
+              }
+            </View>
+            {msgTone === "system" && !pickingSysMsg && previewing !== "system_msg" && (
+              <TouchableOpacity onPress={previewSystemMsg} style={s.playBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Feather name="play" size={15} color={GREEN} />
+              </TouchableOpacity>
+            )}
+            {previewing === "system_msg" && <Feather name="volume-2" size={15} color={GREEN} style={{ marginRight: 8 }} />}
+            {msgTone === "system"
+              ? <Feather name="check-circle" size={20} color={GREEN} />
+              : <Feather name="chevron-right" size={18} color={TEXT_SEC} />}
+          </TouchableOpacity>
+        )}
+
+        {/* Tonos bundled */}
         {MSG_TONES.map((t) => {
           const active = msgTone === t.value;
           return (
@@ -285,7 +502,7 @@ export default function AjustesSonido() {
           );
         })}
 
-        {/* Desde dispositivo — mensaje */}
+        {/* Archivo del dispositivo — mensaje */}
         <TouchableOpacity
           style={[s.row, s.customRow, msgTone === "custom" && s.rowActive]}
           onPress={pickMsgAudio}
@@ -298,11 +515,11 @@ export default function AjustesSonido() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[s.rowLabel, msgTone === "custom" && { color: PRIMARY }]}>
-              Elegir desde el dispositivo
+              Elegir archivo de audio
             </Text>
             {customMsgName && msgTone === "custom"
               ? <Text style={s.subLabel} numberOfLines={1}>{customMsgName}</Text>
-              : <Text style={s.subHint}>Ringtones · Música · Descargas</Text>
+              : <Text style={s.subHint}>MP3, AAC, WAV, OGG…</Text>
             }
           </View>
           {msgTone === "custom" && !pickingMsg && previewing !== "custom_msg" && (
@@ -317,17 +534,7 @@ export default function AjustesSonido() {
           }
         </TouchableOpacity>
 
-        {/* Tip */}
-        <View style={s.tipBox}>
-          <Feather name="info" size={14} color={PRIMARY} style={{ marginTop: 1 }} />
-          <Text style={s.tipText}>
-            Al tocar "Elegir desde el dispositivo" se abre el explorador. Navegá a{" "}
-            <Text style={{ fontWeight: "700" }}>Almacenamiento interno → Ringtones</Text>
-            {" "}para ver los tonos del sistema.
-          </Text>
-        </View>
-
-        {/* ── Configuración del sistema Android ──────────────────────────── */}
+        {/* ══ CONFIGURACIÓN DEL SISTEMA ANDROID ═══════════════════════════ */}
         {Platform.OS === "android" && (
           <>
             <Text style={[s.section, { marginTop: 32 }]}>CONFIGURACIÓN DEL SISTEMA</Text>
@@ -338,7 +545,7 @@ export default function AjustesSonido() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowLabel}>Canal: Llamadas</Text>
-                <Text style={s.subLabel}>Elegí sonido, vibración y prioridad en Android</Text>
+                <Text style={s.subLabel}>Vibración, LED y sonido cuando la app está cerrada</Text>
               </View>
               <Feather name="external-link" size={16} color={TEXT_SEC} />
             </TouchableOpacity>
@@ -349,7 +556,7 @@ export default function AjustesSonido() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowLabel}>Canal: Mensajes</Text>
-                <Text style={s.subLabel}>Elegí sonido, vibración y prioridad en Android</Text>
+                <Text style={s.subLabel}>Vibración, LED y sonido cuando la app está cerrada</Text>
               </View>
               <Feather name="external-link" size={16} color={TEXT_SEC} />
             </TouchableOpacity>
@@ -360,40 +567,40 @@ export default function AjustesSonido() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowLabel}>Notificaciones en segundo plano</Text>
-                <Text style={s.subLabel}>Desactivar optimización de batería para recibir siempre</Text>
+                <Text style={s.subLabel}>Desactivar optimización de batería</Text>
               </View>
               <Feather name="external-link" size={16} color={TEXT_SEC} />
             </TouchableOpacity>
 
             <View style={[s.tipBox, { marginTop: 12 }]}>
-              <Feather name="smartphone" size={14} color={PRIMARY} style={{ marginTop: 1 }} />
+              <Feather name="info" size={14} color={PRIMARY} style={{ marginTop: 1 }} />
               <Text style={s.tipText}>
-                Desde los canales del sistema podés elegir cualquier ringtone instalado en el dispositivo, 
-                incluidos los del sistema Android. Para que las notificaciones lleguen con el app cerrado, 
-                desactivá la optimización de batería.
+                El tono del sistema se usa cuando la app está <Text style={{ fontWeight: "700" }}>abierta</Text>. Para cambiar el sonido de las notificaciones push (app cerrada), usá los botones de canal de arriba.
               </Text>
             </View>
           </>
         )}
+
       </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:      { flex: 1, backgroundColor: BG },
-  header:    { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderColor: BORDER },
-  title:     { fontSize: 17, fontWeight: "600", color: TEXT },
-  scroll:    { paddingHorizontal: 16, paddingBottom: 40, paddingTop: 20 },
-  section:   { fontSize: 11, fontWeight: "700", color: TEXT_SEC, letterSpacing: 1.2, marginBottom: 10 },
-  row:       { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: SURFACE, borderRadius: 12, padding: 14, marginBottom: 8 },
-  rowActive: { borderWidth: 1, borderColor: PRIMARY + "60", backgroundColor: SURFACE_SEL },
-  customRow: { borderWidth: 1, borderColor: BORDER2 },
-  iconBox:   { width: 38, height: 38, borderRadius: 10, backgroundColor: BORDER, alignItems: "center", justifyContent: "center" },
-  rowLabel:  { fontSize: 15, color: TEXT, fontWeight: "500" },
-  subLabel:  { fontSize: 11, color: TEXT_MUTED, marginTop: 2 },
-  subHint:   { fontSize: 11, color: TEXT_MUTED, marginTop: 2, fontStyle: "italic" },
-  playBtn:   { width: 30, height: 30, alignItems: "center", justifyContent: "center", marginRight: 4 },
-  tipBox:    { flexDirection: "row", gap: 8, backgroundColor: `${PRIMARY}10`, borderRadius: 10, padding: 12, marginTop: 20, borderWidth: 1, borderColor: `${PRIMARY}25` },
-  tipText:   { flex: 1, fontSize: 12, color: TEXT_SEC, lineHeight: 18 },
+  root:       { flex: 1, backgroundColor: BG },
+  header:     { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderColor: BORDER },
+  title:      { fontSize: 17, fontWeight: "600", color: TEXT },
+  scroll:     { paddingHorizontal: 16, paddingBottom: 40, paddingTop: 20 },
+  section:    { fontSize: 11, fontWeight: "700", color: TEXT_SEC, letterSpacing: 1.2, marginBottom: 10 },
+  row:        { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: SURFACE, borderRadius: 12, padding: 14, marginBottom: 8 },
+  rowActive:  { borderWidth: 1, borderColor: PRIMARY + "60", backgroundColor: SURFACE_SEL },
+  systemRow:  { borderWidth: 1, borderColor: GREEN + "40" },
+  customRow:  { borderWidth: 1, borderColor: BORDER2 },
+  iconBox:    { width: 38, height: 38, borderRadius: 10, backgroundColor: BORDER, alignItems: "center", justifyContent: "center" },
+  rowLabel:   { fontSize: 15, color: TEXT, fontWeight: "500" },
+  subLabel:   { fontSize: 11, color: TEXT_MUTED, marginTop: 2 },
+  subHint:    { fontSize: 11, color: TEXT_MUTED, marginTop: 2, fontStyle: "italic" },
+  playBtn:    { width: 30, height: 30, alignItems: "center", justifyContent: "center", marginRight: 4 },
+  tipBox:     { flexDirection: "row", gap: 8, backgroundColor: `${PRIMARY}10`, borderRadius: 10, padding: 12, marginTop: 20, borderWidth: 1, borderColor: `${PRIMARY}25` },
+  tipText:    { flex: 1, fontSize: 12, color: TEXT_SEC, lineHeight: 18 },
 });
