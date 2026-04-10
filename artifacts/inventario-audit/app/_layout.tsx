@@ -144,9 +144,14 @@ function RootLayoutNav() {
 
     // No autenticado:
     if (inBossMain) {
-      // Llegó a las tabs sin autenticar (race condition o navegación directa)
-      // → mandarlo al login del jefe, no al setup
-      router.replace("/boss-login");
+      // Salió del Modo Jefe o llegó sin autenticar
+      // Si el dispositivo tiene tienda configurada → ir a la tienda
+      // Si no → ir al login del jefe para que pueda entrar de nuevo
+      if (storeConfig) {
+        router.replace("/(tabs)");
+      } else {
+        router.replace("/boss-login");
+      }
       return;
     }
 
