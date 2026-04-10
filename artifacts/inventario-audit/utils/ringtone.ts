@@ -2,8 +2,8 @@ import { Audio, type AVPlaybackSource } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type CallTone = "ring1" | "ring2" | "ring3" | "silent" | "custom";
-export type MsgTone  = "ping"  | "chime" | "pop"   | "silent" | "custom";
+export type CallTone = "ring1" | "ring2" | "ring3" | "silent" | "custom" | "system";
+export type MsgTone  = "ping"  | "chime" | "pop"   | "silent" | "custom" | "system";
 
 const CALL_SOURCES: Record<string, AVPlaybackSource> = {
   ring1: require("../assets/sounds/ring1.wav") as AVPlaybackSource,
@@ -18,12 +18,16 @@ const MSG_SOURCES: Record<string, AVPlaybackSource> = {
 };
 
 const KEYS = {
-  callTone:      "call_tone",
-  msgTone:       "msg_tone",
-  customCallUri: "custom_call_uri",
-  customCallName:"custom_call_name",
-  customMsgUri:  "custom_msg_uri",
-  customMsgName: "custom_msg_name",
+  callTone:       "call_tone",
+  msgTone:        "msg_tone",
+  customCallUri:  "custom_call_uri",
+  customCallName: "custom_call_name",
+  customMsgUri:   "custom_msg_uri",
+  customMsgName:  "custom_msg_name",
+  systemCallUri:  "system_call_uri",
+  systemCallName: "system_call_name",
+  systemMsgUri:   "system_msg_uri",
+  systemMsgName:  "system_msg_name",
 };
 
 let currentSound: Audio.Sound | null = null;
@@ -43,7 +47,7 @@ export async function setMsgTone(tone: MsgTone): Promise<void> {
   await AsyncStorage.setItem(KEYS.msgTone, tone);
 }
 
-// ── Custom URIs ──────────────────────────────────────────────────────────────
+// ── Custom URIs (archivo del dispositivo) ────────────────────────────────────
 
 export async function getCustomCallUri(): Promise<string | null> {
   return AsyncStorage.getItem(KEYS.customCallUri);
@@ -65,6 +69,28 @@ export async function setCustomMsg(uri: string, name: string): Promise<void> {
   await AsyncStorage.multiSet([[KEYS.customMsgUri, uri], [KEYS.customMsgName, name]]);
 }
 
+// ── System ringtone URIs (picker nativo de Android) ──────────────────────────
+
+export async function getSystemCallUri(): Promise<string | null> {
+  return AsyncStorage.getItem(KEYS.systemCallUri);
+}
+export async function getSystemCallName(): Promise<string | null> {
+  return AsyncStorage.getItem(KEYS.systemCallName);
+}
+export async function setSystemCall(uri: string, name: string): Promise<void> {
+  await AsyncStorage.multiSet([[KEYS.systemCallUri, uri], [KEYS.systemCallName, name]]);
+}
+
+export async function getSystemMsgUri(): Promise<string | null> {
+  return AsyncStorage.getItem(KEYS.systemMsgUri);
+}
+export async function getSystemMsgName(): Promise<string | null> {
+  return AsyncStorage.getItem(KEYS.systemMsgName);
+}
+export async function setSystemMsg(uri: string, name: string): Promise<void> {
+  await AsyncStorage.multiSet([[KEYS.systemMsgUri, uri], [KEYS.systemMsgName, name]]);
+}
+
 /**
  * Copies a picked audio file into the app's document directory so it persists
  * across app restarts (content:// URIs on Android are temporary).
@@ -76,7 +102,6 @@ export async function persistAudioFile(
   slot: "call" | "msg"
 ): Promise<string> {
   const dest = `${FileSystem.documentDirectory}custom_${slot}_${filename}`;
-  // Remove old file if different
   const info = await FileSystem.getInfoAsync(dest);
   if (!info.exists) {
     await FileSystem.copyAsync({ from: sourceUri, to: dest });
@@ -116,6 +141,11 @@ export async function playCallRingtone(): Promise<void> {
     if (!uri) return;
     sound = await loadSource(uri);
     await (sound as any).setIsLoopingAsync?.(true).catch(() => {});
+  } else if (tone === "system") {
+    const uri = await getSystemCallUri();
+    if (!uri) return;
+    sound = await loadSource(uri);
+    await (sound as any).setIsLoopingAsync?.(true).catch(() => {});
   } else {
     const { sound: s } = await Audio.Sound.createAsync(
       CALL_SOURCES[tone],
@@ -136,6 +166,10 @@ export async function playMsgNotification(): Promise<void> {
   let sound: Audio.Sound;
   if (tone === "custom") {
     const uri = await getCustomMsgUri();
+    if (!uri) return;
+    sound = await loadSource(uri);
+  } else if (tone === "system") {
+    const uri = await getSystemMsgUri();
     if (!uri) return;
     sound = await loadSource(uri);
   } else {
@@ -164,7 +198,7 @@ export async function previewSound(key: string, customUri?: string): Promise<voi
   await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
 
   let sound: Audio.Sound;
-  if (key === "custom" && customUri) {
+  if ((key === "custom" || key === "system") && customUri) {
     sound = await loadSource(customUri);
   } else {
     const all: Record<string, AVPlaybackSource> = { ...CALL_SOURCES, ...MSG_SOURCES };
