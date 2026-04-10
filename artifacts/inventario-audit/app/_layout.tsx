@@ -179,11 +179,19 @@ export default function RootLayout() {
         }
   );
 
-  const ready = isWeb || fontsLoaded || !!fontError;
+  // Timeout de seguridad: si useFonts se cuelga en producción (sin error ni éxito),
+  // forzamos la continuación a los 4 segundos para no quedar atascados en el splash.
+  const [forceReady, setForceReady] = React.useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setForceReady(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const ready = isWeb || fontsLoaded || !!fontError || forceReady;
 
   useEffect(() => {
     if (ready) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
       checkForUpdates();
     }
   }, [ready]);
