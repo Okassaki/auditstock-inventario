@@ -7,26 +7,40 @@ on:
         description: "Descripción del build (opcional)"
         required: false
         default: "Build manual"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "components/**"
+      - "utils/**"
+      - "context/**"
+      - "package.json"
+      - "app.json"
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - name: Liberar espacio en disco
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc
+          sudo apt-get clean
+          df -h
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "pnpm"
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -35,52 +49,68 @@ jobs:
           distribution: "temurin"
 
       - name: Instalar dependencias
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --shamefully-hoist
 
-      - name: Instalar EAS CLI
-        run: npm install -g eas-cli@latest
-
-      - name: Verificar secrets requeridos
-        run: |
-          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
-            echo "❌ Secret EXPO_TOKEN no configurado en GitHub"
-            exit 1
-          fi
-          if [ -z "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
-            echo "❌ Secret GOOGLE_SERVICES_JSON no configurado en GitHub"
-            echo "   Creá el proyecto en https://console.firebase.google.com"
-            echo "   Paquete Android: com.auditstock.inventario"
-            echo "   Descargá google-services.json y pegá su contenido como secret"
-            exit 1
-          fi
-          echo "✅ Secrets OK"
-
-      - name: Crear google-services.json
-        run: |
-          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > artifacts/inventario-audit/google-services.json
-          echo "✅ google-services.json creado"
-
-      - name: Build APK (local, sin consumir créditos EAS)
+      - name: Expo Prebuild
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+          save-always: true
+
+      - name: Build APK
         run: |
-          cd artifacts/inventario-audit
-          eas build \
-            --local \
-            --platform android \
-            --profile preview \
-            --non-interactive \
-            --output /tmp/AuditStock.apk
-        
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=2g" \
+            -Dorg.gradle.workers.max=2 \
+            --build-cache
+          cp app/build/outputs/apk/release/app-release.apk /tmp/AuditStock.apk
+
+      - name: Leer versionCode
+        id: ver
+        run: |
+          CODE=$(node -e "console.log(require('./app.json').expo.android.versionCode)")
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=v$CODE" >> "$GITHUB_OUTPUT"
+          echo "VersionCode: $CODE"
+
       - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: AuditStock-v14-${{ github.run_number }}
+          name: AuditStock-${{ steps.ver.outputs.tag }}-build${{ github.run_number }}
           path: /tmp/AuditStock.apk
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: error
 
-      - name: Resumen del build
+      - name: Publicar GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "AuditStock ${{ steps.ver.outputs.tag }} (Build #${{ github.run_number }})"
+          body: |
+            ## AuditStock ${{ steps.ver.outputs.tag }}
+            Build #${{ github.run_number }}
+            ${{ github.event.inputs.version_message || '' }}
+            ### Instalar
+            Descargá el archivo `AuditStock.apk` de abajo y abrilo en tu Android.
+          files: /tmp/AuditStock.apk
+          make_latest: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resumen
         run: |
           ls -lh /tmp/AuditStock.apk
-          echo "✅ APK listo — descargalo desde la pestaña Artifacts en GitHub Actions"
+          echo "✅ Release ${{ steps.ver.outputs.tag }} publicado"
