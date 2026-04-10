@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -16,18 +17,21 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useDatabase, type Auditoria } from "@/context/DatabaseContext";
-import { parsearExcel } from "@/utils/excel";
+import { parsearExcel, parsearExcelDesdeBase64 } from "@/utils/excel";
+import { useColorScheme } from "@/hooks/useColorScheme";
+import { useStoreConfig } from "@/context/StoreConfigContext";
+import { obtenerExcelPendiente, eliminarExcelPendiente } from "@/utils/api";
 
 export default function InicioScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const C = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
+  const { storeConfig } = useStoreConfig();
 
   const {
     cargarAuditorias,
@@ -35,29 +39,96 @@ export default function InicioScreen() {
     cargarAuditoria,
     auditoriaActual,
     eliminarAuditoria,
+    archivarAuditoria,
     limpiarAuditoriaActual,
     importarProductos,
+    actualizarAuditores,
   } = useDatabase();
 
   const [auditorias, setAuditorias] = useState<Auditoria[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [nombreNueva, setNombreNueva] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [showArchivadas, setShowArchivadas] = useState(false);
+  const [auditoriaAArchivar, setAuditoriaAArchivar] = useState<Auditoria | null>(null);
+
+  // Modal de activación (pedir auditores al seleccionar una auditoría existente)
+  const [auditoriaParaActivar, setAuditoriaParaActivar] = useState<Auditoria | null>(null);
+  const [activarAud1, setActivarAud1] = useState("");
+  const [activarAud2, setActivarAud2] = useState("");
+  const [isActivating, setIsActivating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [auditoriaAEliminar, setAuditoriaAEliminar] = useState<Auditoria | null>(null);
+  const [resultModal, setResultModal] = useState<{ titulo: string; mensaje: string; audId?: number } | null>(null);
+  const [excelPendiente, setExcelPendiente] = useState<{ nombreArchivo: string; contenidoBase64: string } | null>(null);
+  const [importandoServidor, setImportandoServidor] = useState(false);
 
   const cargar = useCallback(async () => {
     const list = await cargarAuditorias();
     setAuditorias(list);
   }, [cargarAuditorias]);
 
+  const verificarExcelPendiente = useCallback(async () => {
+    if (!storeConfig?.codigo) return;
+    try {
+      const data = await obtenerExcelPendiente(storeConfig.codigo);
+      setExcelPendiente(data);
+    } catch {
+      // Sin conexión o sin pendiente
+    }
+  }, [storeConfig?.codigo]);
+
   // Recargar la lista cada vez que el usuario vuelve a esta pestaña
   useFocusEffect(
     useCallback(() => {
       cargar();
-    }, [cargar])
+      verificarExcelPendiente();
+    }, [cargar, verificarExcelPendiente])
   );
+
+  const handleImportarDesdeServidor = async () => {
+    if (!excelPendiente || !storeConfig?.codigo) return;
+    setImportandoServidor(true);
+    try {
+      const { productos, errores } = await parsearExcelDesdeBase64(excelPendiente.contenidoBase64);
+      if (productos.length === 0) {
+        setImportandoServidor(false);
+        Alert.alert(
+          "Sin datos",
+          errores.length > 0 ? errores.join("\n") : "El archivo no contiene productos válidos."
+        );
+        return;
+      }
+      // Crear una nueva auditoría para este Excel
+      const nombreAud = `Excel ${excelPendiente.nombreArchivo.replace(/\.[^.]+$/, "")} ${new Date().toLocaleDateString("es")}`;
+      const audId = await crearAuditoria(nombreAud);
+      if (!audId) throw new Error("No se pudo crear la auditoría");
+      const { insertados, duplicados, errores: errImp } = await importarProductos(
+        productos.map((p) => ({
+          codigo: p.codigo,
+          nombre: p.nombre,
+          stock_sistema: p.stock_sistema,
+          imeis_sistema: p.imeis_sistema ?? null,
+          comentario: null,
+        })),
+        audId,
+        false
+      );
+      // Eliminar el pendiente del servidor
+      try { await eliminarExcelPendiente(storeConfig.codigo); } catch {}
+      setExcelPendiente(null);
+      setImportandoServidor(false);
+      await cargar();
+      let msg = `✅ Excel importado correctamente\n\n${productos.length} leídos, ${insertados} guardados`;
+      if (duplicados > 0) msg += `, ${duplicados} duplicados ignorados`;
+      if (errImp.length > 0) msg += `\n\nAdvertencias:\n${errImp.slice(0, 3).join("\n")}`;
+      Alert.alert("Excel importado", msg);
+    } catch (e: any) {
+      setImportandoServidor(false);
+      Alert.alert("Error", e?.message ?? "No se pudo importar el Excel");
+    }
+  };
 
   const handleCrear = async () => {
     const nombre = nombreNueva.trim();
@@ -80,80 +151,155 @@ export default function InicioScreen() {
     }
   };
 
+  /** En web: abre un <input type=file> nativo y devuelve el File seleccionado */
+  const pickFileWeb = (): Promise<File | null> =>
+    new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
+      // Dar tiempo para que el diálogo se abra antes de escuchar cambios
+      let settled = false;
+      const settle = (val: File | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(val);
+      };
+      input.onchange = () => settle(input.files?.[0] ?? null);
+      // Si el usuario cierra sin elegir, el foco vuelve a la ventana
+      window.addEventListener("focus", function onFocus() {
+        window.removeEventListener("focus", onFocus);
+        setTimeout(() => settle(null), 500);
+      }, { once: true });
+      input.click();
+    });
+
   const handleImportar = async (audId: number) => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "application/vnd.ms-excel",
-          "*/*",
-        ],
-        copyToCacheDirectory: true,
-      });
+      let nativeFile: File | undefined;
+      let fileUri = "";
 
-      if (result.canceled || !result.assets?.[0]) return;
+      if (Platform.OS === "web") {
+        // Usar input nativo en lugar de expo-document-picker (más confiable en móvil)
+        const picked = await pickFileWeb();
+        if (!picked) return;
+        nativeFile = picked;
+        fileUri = "";
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: [
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "*/*",
+          ],
+          copyToCacheDirectory: true,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        const asset = result.assets[0];
+        fileUri = asset.uri;
+        nativeFile = (asset as any).file ?? undefined;
+      }
 
       setIsImporting(true);
       setImportProgress("Leyendo archivo Excel...");
 
-      const { productos, errores } = await parsearExcel(result.assets[0].uri);
+      const { productos, errores, diagnostico } = await parsearExcel(fileUri, nativeFile);
 
       if (productos.length === 0) {
-        Alert.alert(
-          "Sin datos",
-          errores.length > 0
-            ? `No se pudieron leer productos.\n\nErrores:\n${errores.slice(0, 5).join("\n")}`
-            : "El archivo no contiene productos válidos."
-        );
         setIsImporting(false);
+        const msg = errores.length > 0
+          ? `No se pudieron leer productos.\n\nErrores:\n${errores.slice(0, 5).join("\n")}`
+          : "El archivo no contiene productos válidos.";
+        setResultModal({ titulo: "Sin datos", mensaje: msg });
         return;
       }
 
-      setImportProgress(`Importando ${productos.length} productos...`);
+      const parsedCount = productos.length;
+      setImportProgress(`Leídos: ${parsedCount} productos\nGuardando en base de datos...`);
 
-      const { insertados, duplicados, errores: errImp } = await importarProductos(
+      const { insertados, duplicados, errores: errImp, info: infoImp } = await importarProductos(
         productos.map((p) => ({
           codigo: p.codigo,
           nombre: p.nombre,
           stock_sistema: p.stock_sistema,
           imeis_sistema: p.imeis_sistema ?? null,
+          comentario: null,
         })),
-        audId
+        audId,
+        false
       );
 
       setIsImporting(false);
 
-      let mensaje = `${insertados} productos importados correctamente.`;
-      if (duplicados > 0) mensaje += `\n${duplicados} duplicados omitidos.`;
-      if (errImp.length > 0) mensaje += `\n\nAdvertencias:\n${errImp.slice(0, 3).join("\n")}`;
+      let mensaje = "";
+      if (diagnostico) mensaje += `📄 ${diagnostico}\n\n`;
+      mensaje += `Leídos del Excel: ${parsedCount}\nProductos únicos guardados: ${insertados}`;
+      if (duplicados > 0) mensaje += `\nDuplicados en Excel ignorados: ${duplicados}`;
+      if (infoImp) mensaje += `\n[${infoImp}]`;
+      if (errImp.length > 0) mensaje += `\n\n${errImp.join("\n")}`;
       if (errores.length > 0) mensaje += `\n\nAvisos del archivo:\n${errores.slice(0, 3).join("\n")}`;
 
-      Alert.alert("Importación completada", mensaje, [
-        {
-          text: "Ir a Conteo",
-          onPress: async () => {
-            await cargarAuditoria(audId);
-            router.push("/(tabs)/conteo");
-          },
-        },
-        { text: "OK" },
-      ]);
-
+      setResultModal({ titulo: "Importación completada ✓", mensaje, audId });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await cargar();
     } catch (e) {
       setIsImporting(false);
-      Alert.alert("Error", String(e));
+      setResultModal({ titulo: "Error al importar", mensaje: String(e) });
     }
   };
 
   const handleSeleccionar = async (aud: Auditoria) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await cargarAuditoria(aud.id);
+    // Las archivadas se cargan en modo solo lectura
+    if (aud.estado === "archivada") {
+      await cargarAuditoria(aud.id);
+      return;
+    }
+    // Si ya tiene auditores registrados, activa directamente sin preguntar
+    if (aud.auditor1) {
+      await cargarAuditoria(aud.id);
+      return;
+    }
+    // Primera vez: pide auditores
+    setAuditoriaParaActivar(aud);
+    setActivarAud1("");
+    setActivarAud2("");
+  };
+
+  const handleActivar = async () => {
+    if (!auditoriaParaActivar) return;
+    if (!activarAud1.trim()) {
+      Alert.alert("Auditor requerido", "Debe registrar al menos el nombre del Auditor 1.");
+      return;
+    }
+    setIsActivating(true);
+    try {
+      await actualizarAuditores(auditoriaParaActivar.id, activarAud1, activarAud2);
+      await cargarAuditoria(auditoriaParaActivar.id);
+      await cargar();
+      setAuditoriaParaActivar(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert("Error", String(e));
+    } finally {
+      setIsActivating(false);
+    }
   };
 
   const handleEliminar = (aud: Auditoria) => {
     setAuditoriaAEliminar(aud);
+  };
+
+  const confirmarArchivar = async () => {
+    if (!auditoriaAArchivar) return;
+    const id = auditoriaAArchivar.id;
+    setAuditoriaAArchivar(null);
+    try {
+      await archivarAuditoria(id);
+      await cargar();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert("Error", String(e));
+    }
   };
 
   const confirmarEliminar = async () => {
@@ -222,6 +368,40 @@ export default function InicioScreen() {
         </TouchableOpacity>
       </View>
 
+      {excelPendiente && (
+        <View style={[styles.excelBanner, { backgroundColor: "#8B5CF6" + "22", borderColor: "#8B5CF6" + "60" }]}>
+          <View style={styles.excelBannerLeft}>
+            <Feather name="download" size={18} color="#8B5CF6" />
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <Text style={[styles.excelBannerTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                El jefe cargó un nuevo Excel
+              </Text>
+              <Text style={[styles.excelBannerSub, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
+                {excelPendiente.nombreArchivo}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.excelBannerActions}>
+            <TouchableOpacity
+              onPress={handleImportarDesdeServidor}
+              disabled={importandoServidor}
+              style={[styles.excelImportBtn, { backgroundColor: "#8B5CF6" }]}
+            >
+              {importandoServidor
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={{ color: "#fff", fontFamily: "Inter_700Bold", fontSize: 13 }}>Importar</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setExcelPendiente(null)}
+              style={styles.excelDismissBtn}
+            >
+              <Feather name="x" size={16} color={C.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {auditoriaActual && (
         <View style={[styles.activeCard, { backgroundColor: C.primary + "18", borderColor: C.primary + "40" }]}>
           <View style={styles.activeLeft}>
@@ -260,28 +440,13 @@ export default function InicioScreen() {
           </Text>
         </View>
 
-        {auditorias.length === 0 ? (
-          <View style={styles.empty}>
-            <MaterialCommunityIcons name="clipboard-text-outline" size={56} color={C.textMuted} />
-            <Text style={[styles.emptyTitle, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
-              Sin auditorías
-            </Text>
-            <Text style={[styles.emptyDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              Crea tu primera auditoría para comenzar
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowModal(true)}
-              style={[styles.emptyBtn, { backgroundColor: C.primary }]}
-            >
-              <Feather name="plus" size={16} color="#fff" />
-              <Text style={[styles.emptyBtnText, { fontFamily: "Inter_600SemiBold" }]}>
-                Nueva auditoría
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          auditorias.map((aud) => {
+        {(() => {
+          const activas = auditorias.filter((a) => a.estado !== "archivada");
+          const archivadas = auditorias.filter((a) => a.estado === "archivada");
+
+          const renderCard = (aud: Auditoria) => {
             const isActiva = auditoriaActual?.id === aud.id;
+            const isArchivada = aud.estado === "archivada";
             const prog =
               aud.total_productos > 0
                 ? Math.round((aud.total_contados / aud.total_productos) * 100)
@@ -295,6 +460,7 @@ export default function InicioScreen() {
                     backgroundColor: C.surface,
                     borderColor: isActiva ? C.primary : C.surfaceBorder,
                     borderWidth: isActiva ? 1.5 : 1,
+                    opacity: isArchivada ? 0.75 : 1,
                   },
                 ]}
               >
@@ -322,6 +488,15 @@ export default function InicioScreen() {
                       })}
                     </Text>
                   </View>
+
+                  {(aud.auditor1 || aud.auditor2) && (
+                    <View style={[styles.auditoresRow, { borderTopColor: C.surfaceBorder }]}>
+                      <Feather name="users" size={12} color={C.textMuted} />
+                      <Text style={[styles.auditoresText, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                        {[aud.auditor1, aud.auditor2].filter(Boolean).join(" · ")}
+                      </Text>
+                    </View>
+                  )}
 
                   <View style={styles.audStats}>
                     <View style={styles.audStat}>
@@ -360,31 +535,92 @@ export default function InicioScreen() {
                   </View>
                 </TouchableOpacity>
 
-                <View style={[styles.audActions, { borderTopColor: C.surfaceBorder }]}>
-                  <TouchableOpacity
-                    onPress={() => handleImportar(aud.id)}
-                    style={styles.audAction}
-                  >
-                    <Feather name="upload" size={16} color={C.primary} />
-                    <Text style={[styles.audActionText, { color: C.primary, fontFamily: "Inter_500Medium" }]}>
-                      Importar Excel
-                    </Text>
-                  </TouchableOpacity>
-                  <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
-                  <TouchableOpacity
-                    onPress={() => handleEliminar(aud)}
-                    style={styles.audAction}
-                  >
-                    <Feather name="trash-2" size={16} color={C.danger} />
-                    <Text style={[styles.audActionText, { color: C.danger, fontFamily: "Inter_500Medium" }]}>
-                      Eliminar
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                {!isArchivada && (
+                  <View style={[styles.audActions, { borderTopColor: C.surfaceBorder }]}>
+                    <TouchableOpacity
+                      onPress={() => handleImportar(aud.id)}
+                      style={styles.audAction}
+                    >
+                      <Feather name="upload" size={16} color={C.primary} />
+                      <Text style={[styles.audActionText, { color: C.primary, fontFamily: "Inter_500Medium" }]}>
+                        Importar Excel
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
+                    <TouchableOpacity
+                      onPress={() => setAuditoriaAArchivar(aud)}
+                      style={styles.audAction}
+                    >
+                      <Feather name="archive" size={16} color={C.warning} />
+                      <Text style={[styles.audActionText, { color: C.warning, fontFamily: "Inter_500Medium" }]}>
+                        Archivar
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={[styles.actionDivider, { backgroundColor: C.surfaceBorder }]} />
+                    <TouchableOpacity
+                      onPress={() => handleEliminar(aud)}
+                      style={styles.audAction}
+                    >
+                      <Feather name="trash-2" size={16} color={C.danger} />
+                      <Text style={[styles.audActionText, { color: C.danger, fontFamily: "Inter_500Medium" }]}>
+                        Eliminar
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             );
-          })
-        )}
+          };
+
+          if (auditorias.length === 0) {
+            return (
+              <View style={styles.empty}>
+                <MaterialCommunityIcons name="clipboard-text-outline" size={56} color={C.textMuted} />
+                <Text style={[styles.emptyTitle, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  Sin auditorías
+                </Text>
+                <Text style={[styles.emptyDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                  Crea tu primera auditoría para comenzar
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowModal(true)}
+                  style={[styles.emptyBtn, { backgroundColor: C.primary }]}
+                >
+                  <Feather name="plus" size={16} color="#fff" />
+                  <Text style={[styles.emptyBtnText, { fontFamily: "Inter_600SemiBold" }]}>
+                    Nueva auditoría
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          return (
+            <>
+              {activas.map(renderCard)}
+              {archivadas.length > 0 && (
+                <>
+                  <TouchableOpacity
+                    onPress={() => setShowArchivadas(!showArchivadas)}
+                    style={[styles.archivadasHeader, { borderColor: C.surfaceBorder }]}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="archive" size={14} color={C.textSecondary} />
+                    <Text style={[styles.archivadasTitle, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                      Archivadas ({archivadas.length})
+                    </Text>
+                    <Feather
+                      name={showArchivadas ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={C.textMuted}
+                    />
+                  </TouchableOpacity>
+                  {showArchivadas && archivadas.map(renderCard)}
+                </>
+              )}
+            </>
+          );
+        })()}
       </ScrollView>
 
       {isImporting && (
@@ -402,38 +638,50 @@ export default function InicioScreen() {
         visible={showModal}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowModal(false)}
+        onRequestClose={() => {
+          setShowModal(false);
+          setNombreNueva("");
+        }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
             <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
-              Nueva auditoría
-            </Text>
-            <Text style={[styles.modalDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              Ingresa un nombre identificador para esta sesión de auditoría.
-            </Text>
-            <TextInput
-              value={nombreNueva}
-              onChangeText={setNombreNueva}
-              placeholder="Ej: Tienda Centro - Junio 2025"
-              placeholderTextColor={C.textMuted}
-              style={[
-                styles.modalInput,
-                {
-                  backgroundColor: C.surfaceElevated,
-                  borderColor: C.surfaceBorder,
-                  color: C.text,
-                  fontFamily: "Inter_400Regular",
-                },
-              ]}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleCrear}
-            />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: 12 }}
+            >
+              <Text style={[styles.modalTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                Nueva auditoría
+              </Text>
+              <Text style={[styles.modalDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                Ingresa un nombre identificador para esta sesión de auditoría.
+              </Text>
+              <TextInput
+                value={nombreNueva}
+                onChangeText={setNombreNueva}
+                placeholder="Ej: Tienda Centro - Junio 2025"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleCrear}
+              />
+            </ScrollView>
             <View style={styles.modalBtns}>
               <TouchableOpacity
-                onPress={() => setShowModal(false)}
+                onPress={() => {
+                  setShowModal(false);
+                  setNombreNueva("");
+                }}
                 style={[styles.modalBtnSecondary, { borderColor: C.surfaceBorder }]}
               >
                 <Text style={[styles.modalBtnSecondaryText, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
@@ -452,6 +700,190 @@ export default function InicioScreen() {
                     Crear
                   </Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Modal de activación — pide auditores al seleccionar una auditoría */}
+      <Modal
+        visible={!!auditoriaParaActivar}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAuditoriaParaActivar(null)}
+      >
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
+            <View style={styles.modalHandle} />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: 12 }}
+            >
+              <Text style={[styles.modalTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                Registrar auditores
+              </Text>
+              <Text
+                style={[styles.audNombre, { color: C.primary, fontFamily: "Inter_600SemiBold", fontSize: 15 }]}
+                numberOfLines={2}
+              >
+                {auditoriaParaActivar?.nombre}
+              </Text>
+              <View style={[styles.warningBox, { backgroundColor: `${C.danger}18`, borderColor: `${C.danger}55` }]}>
+                <Feather name="alert-triangle" size={16} color={C.danger} />
+                <Text style={[styles.warningText, { color: C.danger, fontFamily: "Inter_600SemiBold" }]}>
+                  Elige bien. Los auditores solo se pueden registrar una vez y serán los responsables de esta auditoría.
+                </Text>
+              </View>
+              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                AUDITOR 1
+              </Text>
+              <TextInput
+                value={activarAud1}
+                onChangeText={setActivarAud1}
+                placeholder="Nombre completo"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                autoFocus
+                returnKeyType="next"
+              />
+              <Text style={[styles.auditorLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                AUDITOR 2{" "}
+                <Text style={{ color: C.textMuted, fontWeight: "400", fontSize: 11 }}>(opcional)</Text>
+              </Text>
+              <TextInput
+                value={activarAud2}
+                onChangeText={setActivarAud2}
+                placeholder="Nombre completo"
+                placeholderTextColor={C.textMuted}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor: C.surfaceBorder,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+                returnKeyType="done"
+                onSubmitEditing={handleActivar}
+              />
+            </ScrollView>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                onPress={() => setAuditoriaParaActivar(null)}
+                style={[styles.modalBtnSecondary, { borderColor: C.surfaceBorder }]}
+              >
+                <Text style={[styles.modalBtnSecondaryText, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleActivar}
+                disabled={isActivating}
+                style={[styles.modalBtnPrimary, { backgroundColor: C.primary }]}
+              >
+                {isActivating ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={[styles.modalBtnPrimaryText, { fontFamily: "Inter_700Bold" }]}>
+                    Activar
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Modal resultado importación — reemplaza Alert.alert (no funciona en móvil web) */}
+      <Modal
+        visible={!!resultModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setResultModal(null)}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
+          <View style={[styles.confirmBox, { backgroundColor: C.surface }]}>
+            <Text style={[styles.confirmTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+              {resultModal?.titulo}
+            </Text>
+            <Text style={[styles.confirmDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+              {resultModal?.mensaje}
+            </Text>
+            <View style={styles.confirmButtons}>
+              {resultModal?.audId != null && (
+                <TouchableOpacity
+                  style={[styles.confirmBtn, { backgroundColor: C.primary }]}
+                  onPress={async () => {
+                    const id = resultModal.audId!;
+                    setResultModal(null);
+                    await cargarAuditoria(id);
+                    router.push("/(tabs)/conteo");
+                  }}
+                >
+                  <Text style={[styles.confirmBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
+                    Ir a Conteo
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: C.surfaceBorder }]}
+                onPress={() => setResultModal(null)}
+              >
+                <Text style={[styles.confirmBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  OK
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal confirmación archivar */}
+      <Modal
+        visible={!!auditoriaAArchivar}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAuditoriaAArchivar(null)}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
+          <View style={[styles.confirmBox, { backgroundColor: C.surface }]}>
+            <Feather name="archive" size={32} color={C.warning} style={{ marginBottom: 12 }} />
+            <Text style={[styles.confirmTitle, { color: C.text, fontFamily: "Inter_700Bold" }]}>
+              Archivar auditoría
+            </Text>
+            <Text style={[styles.confirmDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+              <Text style={{ fontFamily: "Inter_600SemiBold", color: C.text }}>
+                "{auditoriaAArchivar?.nombre}"
+              </Text>
+              {" "}quedará archivada y no se podrá editar. Solo podrás consultarla y exportarla. Esta acción no se puede deshacer.
+            </Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: C.surfaceBorder }]}
+                onPress={() => setAuditoriaAArchivar(null)}
+              >
+                <Text style={[styles.confirmBtnText, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: C.warning }]}
+                onPress={confirmarArchivar}
+              >
+                <Text style={[styles.confirmBtnText, { color: "#fff", fontFamily: "Inter_600SemiBold" }]}>
+                  Aceptar
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -499,6 +931,7 @@ export default function InicioScreen() {
           </View>
         </View>
       </Modal>
+
     </View>
   );
 }
@@ -533,6 +966,29 @@ const styles = StyleSheet.create({
   },
   activeLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   activeDot: { width: 8, height: 8, borderRadius: 4 },
+  excelBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  excelBannerLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  excelBannerTitle: { fontSize: 13, lineHeight: 16 },
+  excelBannerSub: { fontSize: 11, marginTop: 2 },
+  excelBannerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  excelImportBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  excelDismissBtn: {
+    padding: 6,
+  },
   activeLabel: { fontSize: 11 },
   activeName: { fontSize: 15, marginTop: 1 },
   activeRight: { alignItems: "flex-end" },
@@ -631,6 +1087,24 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 20 },
   modalDesc: { fontSize: 14, lineHeight: 20 },
+  auditorLabel: { fontSize: 11, letterSpacing: 0.7, marginBottom: -6 },
+  warningBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  warningText: { fontSize: 13, lineHeight: 18, flex: 1 },
+  auditoresRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+  },
+  auditoresText: { fontSize: 13, flex: 1 },
   modalInput: {
     borderWidth: 1,
     borderRadius: 12,
@@ -676,5 +1150,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
   },
-  confirmBtnText: { fontSize: 15 },
+  confirmBtnText: { fontSize: 15, textAlign: "center" },
+  archivadasHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    marginTop: 4,
+    marginBottom: 4,
+    borderTopWidth: 1,
+  },
+  archivadasTitle: { flex: 1, fontSize: 13, letterSpacing: 0.3 },
 });
