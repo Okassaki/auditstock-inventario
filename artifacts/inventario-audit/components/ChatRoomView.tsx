@@ -192,7 +192,9 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
 
   // Reproducción de notas de voz
   const [playingId, setPlayingId] = useState<number | null>(null);
-  const [playPos, setPlayPos] = useState<Record<number, number>>({});
+  const [pausedId, setPausedId]   = useState<number | null>(null);
+  const [playPos, setPlayPos]     = useState<Record<number, number>>({});
+  const [playSpeed, setPlaySpeed] = useState<number>(1.0);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   // ── Fetch mensajes ──────────────────────────────────────────────────────
@@ -388,46 +390,84 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
     } catch { setEnviando(false); }
   }
 
+  async function cycleSpeed() {
+    const next = playSpeed === 1 ? 1.5 : playSpeed === 1.5 ? 2 : 1;
+    setPlaySpeed(next);
+    if (soundRef.current) {
+      try { await soundRef.current.setRateAsync(next, true); } catch {}
+    }
+  }
+
   async function togglePlay(msg: MensajeAPI) {
     if (!msg.adjuntoUrl) return;
+
+    // Pausar si está sonando este mismo audio
     if (playingId === msg.id) {
-      await soundRef.current?.stopAsync();
-      await soundRef.current?.unloadAsync();
-      soundRef.current = null;
+      await soundRef.current?.pauseAsync();
       setPlayingId(null);
+      setPausedId(msg.id);
       return;
     }
+
+    // Reanudar si estaba pausado
+    if (pausedId === msg.id && soundRef.current) {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        playThroughEarpieceAndroid: false,
+        shouldDuckAndroid: false,
+      });
+      await soundRef.current.playAsync();
+      setPlayingId(msg.id);
+      setPausedId(null);
+      return;
+    }
+
+    // Detener cualquier audio previo
     if (soundRef.current) {
       await soundRef.current.stopAsync();
       await soundRef.current.unloadAsync();
       soundRef.current = null;
     }
     setPlayingId(msg.id);
+    setPausedId(null);
     setPlayPos((p) => ({ ...p, [msg.id]: 0 }));
-    // Forzar altavoz: después de grabar, Android enruta al auricular por defecto
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      playThroughEarpieceAndroid: false,
-    });
-    const { sound } = await Audio.Sound.createAsync(
-      { uri: msg.adjuntoUrl },
-      { shouldPlay: false, volume: 1.0 },
-      (status) => {
-        if (status.isLoaded) {
-          const prog = status.durationMillis ? status.positionMillis / status.durationMillis : 0;
+
+    try {
+      // Forzar altavoz: Android enruta al auricular después de grabar
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        playThroughEarpieceAndroid: false,
+        shouldDuckAndroid: false,
+      });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: msg.adjuntoUrl },
+        { shouldPlay: false, volume: 1.0, rate: playSpeed, shouldCorrectPitch: true },
+        (status) => {
+          if (!status.isLoaded) return;
+          const prog = status.durationMillis
+            ? status.positionMillis / status.durationMillis
+            : 0;
           setPlayPos((p) => ({ ...p, [msg.id]: prog }));
           if (status.didJustFinish) {
             setPlayingId(null);
+            setPausedId(null);
             setPlayPos((p) => ({ ...p, [msg.id]: 0 }));
-            sound.unloadAsync();
+            sound.unloadAsync().catch(() => {});
+            soundRef.current = null;
           }
         }
-      }
-    );
-    soundRef.current = sound;
-    await sound.playAsync();
+      );
+      soundRef.current = sound;
+      await sound.playAsync();
+    } catch {
+      setPlayingId(null);
+      Alert.alert("Error de audio", "No se pudo reproducir la nota de voz. Verificá tu conexión.");
+    }
   }
 
   // Cleanup al desmontar
@@ -618,36 +658,67 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                   const bars = waveformBars(msg.id);
                   const prog = playPos[msg.id] ?? 0;
                   const playing = playingId === msg.id;
+                  const paused  = pausedId  === msg.id;
+                  const elapsed = Math.round(prog * durSecs);
+                  const accentColor = esMio ? "rgba(255,255,255,0.95)" : T.primary;
+                  const mutedColor  = esMio ? "rgba(255,255,255,0.30)" : (T.textMuted + "90");
+                  const btnBg       = esMio ? "rgba(255,255,255,0.22)" : T.primary;
+                  const btnIconColor = esMio ? T.primary : "#fff";
                   return (
-                    <TouchableOpacity
-                      style={makeStyles(T).audioBubble}
-                      onPress={() => togglePlay(msg)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={[makeStyles(T).audioPlayBtn, { backgroundColor: esMio ? "rgba(255,255,255,0.2)" : T.primary + "30" }]}>
-                        <Feather name={playing ? "pause" : "play"} size={15} color={esMio ? "#fff" : T.primary} />
-                      </View>
-                      <View style={makeStyles(T).audioWaveform}>
-                        {bars.map((h, i) => {
-                          const active = i / bars.length < prog;
-                          return (
-                            <View
-                              key={i}
-                              style={[
-                                makeStyles(T).audioWaveBar,
-                                { height: h },
-                                active
-                                  ? { backgroundColor: esMio ? "#fff" : T.primary }
-                                  : { backgroundColor: esMio ? "rgba(255,255,255,0.35)" : T.textMuted },
-                              ]}
-                            />
-                          );
-                        })}
-                      </View>
-                      <Text style={[makeStyles(T).audioDur, esMio && { color: "rgba(255,255,255,0.75)" }]}>
-                        {playing ? formatSegs(Math.round((playPos[msg.id] ?? 0) * durSecs)) : formatSegs(durSecs)}
-                      </Text>
-                    </TouchableOpacity>
+                    <View style={makeStyles(T).audioBubble}>
+                      {/* Botón play/pause circular */}
+                      <TouchableOpacity
+                        style={[makeStyles(T).audioPlayCircle, { backgroundColor: btnBg }]}
+                        onPress={() => togglePlay(msg)}
+                        activeOpacity={0.75}
+                      >
+                        <Feather
+                          name={playing ? "pause" : "play"}
+                          size={17}
+                          color={btnIconColor}
+                          style={playing ? undefined : { marginLeft: 2 }}
+                        />
+                      </TouchableOpacity>
+
+                      {/* Área central: forma de onda + timer */}
+                      <TouchableOpacity
+                        style={{ flex: 1 }}
+                        onPress={() => togglePlay(msg)}
+                        activeOpacity={0.85}
+                      >
+                        {/* Forma de onda */}
+                        <View style={makeStyles(T).audioWaveform}>
+                          {bars.map((h, i) => {
+                            const filled = i / bars.length < prog;
+                            return (
+                              <View
+                                key={i}
+                                style={[
+                                  makeStyles(T).audioWaveBar,
+                                  { height: h },
+                                  { backgroundColor: filled ? accentColor : mutedColor },
+                                ]}
+                              />
+                            );
+                          })}
+                        </View>
+                        {/* Timer */}
+                        <Text style={[makeStyles(T).audioDur, esMio && { color: "rgba(255,255,255,0.65)" }]}>
+                          {(playing || paused) ? formatSegs(elapsed) : formatSegs(durSecs)}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Velocidad de reproducción */}
+                      <TouchableOpacity
+                        style={makeStyles(T).audioSpeedBtn}
+                        onPress={cycleSpeed}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[makeStyles(T).audioSpeedText, esMio && { color: "rgba(255,255,255,0.70)" }]}>
+                          {playSpeed === 1 ? "1×" : playSpeed === 1.5 ? "1.5×" : "2×"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   );
                 })()}
                 {!!msg.texto && (
@@ -1004,18 +1075,55 @@ function makeStyles(T: Theme) {
       backgroundColor: "rgba(0,0,0,0.4)", alignItems: "center", justifyContent: "center", gap: 12,
     },
     reenviandoText: { fontSize: 14, fontFamily: "Inter_500Medium", color: "#fff" },
-    // Audio bubble
+    // Audio bubble — estilo WhatsApp
     audioBubble: {
-      flexDirection: "row", alignItems: "center", gap: 8,
-      paddingHorizontal: 12, paddingVertical: 10, minWidth: 200, maxWidth: 240,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      minWidth: 220,
+      maxWidth: 260,
     },
-    audioPlayBtn: {
-      width: 30, height: 30, borderRadius: 15,
-      alignItems: "center", justifyContent: "center",
+    audioPlayCircle: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: "center",
+      justifyContent: "center",
+      elevation: 2,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.25,
+      shadowRadius: 3,
     },
-    audioWaveform: { flex: 1, flexDirection: "row", alignItems: "center", gap: 2, height: 28 },
+    audioWaveform: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 2,
+      height: 30,
+      marginBottom: 2,
+    },
     audioWaveBar: { width: 2.5, borderRadius: 2 },
-    audioDur: { fontSize: 11, fontFamily: "Inter_500Medium", color: T.textSec, minWidth: 28 },
+    audioDur: {
+      fontSize: 11,
+      fontFamily: "Inter_400Regular",
+      color: T.textSec,
+    },
+    audioSpeedBtn: {
+      paddingHorizontal: 6,
+      paddingVertical: 4,
+      borderRadius: 6,
+      backgroundColor: "rgba(128,128,128,0.15)",
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 36,
+    },
+    audioSpeedText: {
+      fontSize: 11,
+      fontFamily: "Inter_700Bold",
+      color: T.textSec,
+    },
     // Barra de grabación
     grabBar: {
       flexDirection: "row", alignItems: "center", gap: 8,
