@@ -8,6 +8,8 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { reportarProgreso } from "@/utils/api";
+import { useStoreConfig } from "@/context/StoreConfigContext";
 
 export interface ProductoInventario {
   id: number;
@@ -19,6 +21,7 @@ export interface ProductoInventario {
   imeis_fisicos: string | null;
   auditoria_id: number;
   inconsistencias: string | null;
+  comentario: string | null;
 }
 
 export interface Auditoria {
@@ -26,9 +29,11 @@ export interface Auditoria {
   nombre: string;
   fecha_creacion: string;
   fecha_modificacion: string;
-  estado: "activa" | "completada";
+  estado: "activa" | "completada" | "archivada";
   total_productos: number;
   total_contados: number;
+  auditor1: string | null;
+  auditor2: string | null;
 }
 
 export interface Inconsistencia {
@@ -100,19 +105,24 @@ interface DBContextValue {
   productos: ProductoInventario[];
   inconsistencias: Inconsistencia[];
   isLoading: boolean;
-  crearAuditoria: (nombre: string) => Promise<number>;
+  crearAuditoria: (nombre: string, auditor1?: string, auditor2?: string) => Promise<number>;
   cargarAuditorias: () => Promise<Auditoria[]>;
   cargarAuditoria: (id: number) => Promise<void>;
   importarProductos: (
     productos: Omit<ProductoInventario, "id" | "stock_fisico" | "auditoria_id" | "imeis_fisicos" | "inconsistencias">[],
-    auditoriaId: number
-  ) => Promise<{ insertados: number; duplicados: number; errores: string[] }>;
+    auditoriaId: number,
+    omitirDuplicados?: boolean
+  ) => Promise<{ insertados: number; duplicados: number; errores: string[]; info: string }>;
+  verificarCodigosExistentes: (codigos: string[], auditoriaId: number) => Promise<string[]>;
   actualizarConteo: (
     productoId: number,
     stockFisico: number,
-    imeisFisicos?: string[]
+    imeisFisicos?: string[],
+    comentario?: string
   ) => Promise<void>;
+  actualizarAuditores: (id: number, auditor1: string, auditor2: string) => Promise<void>;
   eliminarAuditoria: (id: number) => Promise<void>;
+  archivarAuditoria: (id: number) => Promise<void>;
   limpiarAuditoriaActual: () => void;
   detectarInconsistencias: () => Inconsistencia[];
   refreshProductos: () => Promise<void>;
@@ -125,6 +135,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [productos, setProductos] = useState<ProductoInventario[]>([]);
   const [inconsistencias, setInconsistencias] = useState<Inconsistencia[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Código de tienda para reportar progreso — via ref para no afectar dependencias de useCallback
+  const { storeConfig } = useStoreConfig();
+  const storeConfigRef = useRef(storeConfig);
+  useEffect(() => { storeConfigRef.current = storeConfig; }, [storeConfig]);
 
   // For native SQLite
   const dbRef = useRef<any>(null);
@@ -139,6 +154,57 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     initDB();
   }, []);
+
+  // Al iniciar, sincronizar en silencio todas las auditorías archivadas/completadas
+  // para que el modo boss las vea aunque nunca se hayan enviado antes
+  useEffect(() => {
+    if (isLoading || !storeConfig) return;
+    const timer = setTimeout(async () => {
+      const cfg = storeConfigRef.current;
+      if (!cfg) return;
+      try {
+        let auditorias: Auditoria[] = [];
+        if (dbRef.current) {
+          auditorias = (await dbRef.current.getAllAsync(
+            "SELECT * FROM auditorias WHERE estado IN ('archivada', 'completada')"
+          )) as Auditoria[];
+        } else {
+          auditorias = storeRef.current.auds.filter(
+            (a) => a.estado === "archivada" || a.estado === "completada"
+          );
+        }
+        for (const aud of auditorias) {
+          let prods: ProductoInventario[] = [];
+          if (dbRef.current) {
+            prods = (await dbRef.current.getAllAsync(
+              "SELECT * FROM productos WHERE auditoria_id = ?", [aud.id]
+            )) as ProductoInventario[];
+          } else {
+            prods = storeRef.current.prods.filter((p) => p.auditoria_id === aud.id);
+          }
+          const snapshot = prods.map((p) => ({
+            codigo: p.codigo,
+            nombre: p.nombre,
+            stock_sistema: p.stock_sistema,
+            stock_fisico: p.stock_fisico,
+            comentario: p.comentario,
+          }));
+          await reportarProgreso(
+            cfg.codigo,
+            String(aud.id),
+            aud.nombre,
+            prods.length,
+            prods.filter((p) => p.stock_fisico !== null).length,
+            aud.estado,
+            snapshot
+          ).catch(() => {});
+        }
+      } catch {
+        // Silencioso — sin red o error inesperado
+      }
+    }, 4000); // Esperar 4s para que la app cargue completamente
+    return () => clearTimeout(timer);
+  }, [isLoading, storeConfig]);
 
   async function initDB() {
     try {
@@ -160,7 +226,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
               fecha_modificacion TEXT NOT NULL,
               estado TEXT DEFAULT 'activa',
               total_productos INTEGER DEFAULT 0,
-              total_contados INTEGER DEFAULT 0
+              total_contados INTEGER DEFAULT 0,
+              auditor1 TEXT,
+              auditor2 TEXT
             );
             CREATE TABLE IF NOT EXISTS productos (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,11 +240,20 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
               imeis_fisicos TEXT,
               auditoria_id INTEGER NOT NULL,
               inconsistencias TEXT,
+              comentario TEXT,
               FOREIGN KEY (auditoria_id) REFERENCES auditorias(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_productos_auditoria ON productos(auditoria_id);
             CREATE INDEX IF NOT EXISTS idx_productos_codigo ON productos(codigo);
           `);
+          // Migrations: add new columns to existing databases
+          for (const sql of [
+            "ALTER TABLE productos ADD COLUMN comentario TEXT;",
+            "ALTER TABLE auditorias ADD COLUMN auditor1 TEXT;",
+            "ALTER TABLE auditorias ADD COLUMN auditor2 TEXT;",
+          ]) {
+            try { await dbRef.current.runAsync(sql); } catch { /* already exists */ }
+          }
         } else {
           // Fallback to AsyncStorage on native if SQLite fails
           const { auds, prods } = await loadStore();
@@ -244,12 +321,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const refreshProductos = useCallback(async () => {
     if (!auditoriaActual) return;
     let prods: ProductoInventario[];
+    let contados = 0;
     if (dbRef.current) {
       prods = await dbRef.current.getAllAsync(
         "SELECT * FROM productos WHERE auditoria_id = ? ORDER BY nombre ASC",
         [auditoriaActual.id]
       );
-      const contados = prods.filter((p) => p.stock_fisico !== null).length;
+      contados = prods.filter((p) => p.stock_fisico !== null).length;
       await dbRef.current.runAsync(
         "UPDATE auditorias SET total_productos = ?, total_contados = ?, fecha_modificacion = ? WHERE id = ?",
         [prods.length, contados, new Date().toISOString(), auditoriaActual.id]
@@ -259,7 +337,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       );
     } else {
       prods = asGetProductosByAuditoria(auditoriaActual.id);
-      const contados = prods.filter((p) => p.stock_fisico !== null).length;
+      contados = prods.filter((p) => p.stock_fisico !== null).length;
       storeRef.current.auds = storeRef.current.auds.map((a) =>
         a.id === auditoriaActual.id
           ? { ...a, total_productos: prods.length, total_contados: contados, fecha_modificacion: new Date().toISOString() }
@@ -271,14 +349,37 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       );
     }
     setProductos(prods);
+
+    // Reportar progreso al servidor en segundo plano (silencioso si no hay red)
+    const cfg = storeConfigRef.current;
+    if (cfg) {
+      const snapshot = prods.map((p) => ({
+        codigo: p.codigo,
+        nombre: p.nombre,
+        stock_sistema: p.stock_sistema,
+        stock_fisico: p.stock_fisico,
+        comentario: p.comentario,
+      }));
+      reportarProgreso(
+        cfg.codigo,
+        String(auditoriaActual.id),
+        auditoriaActual.nombre,
+        prods.length,
+        contados,
+        auditoriaActual.estado,
+        snapshot
+      ).catch(() => {});
+    }
   }, [auditoriaActual, asGetProductosByAuditoria]);
 
-  const crearAuditoria = useCallback(async (nombre: string): Promise<number> => {
+  const crearAuditoria = useCallback(async (nombre: string, auditor1?: string, auditor2?: string): Promise<number> => {
     const now = new Date().toISOString();
+    const a1 = auditor1?.trim() || null;
+    const a2 = auditor2?.trim() || null;
     if (dbRef.current) {
       const result = await dbRef.current.runAsync(
-        "INSERT INTO auditorias (nombre, fecha_creacion, fecha_modificacion, estado) VALUES (?, ?, ?, 'activa')",
-        [nombre, now, now]
+        "INSERT INTO auditorias (nombre, fecha_creacion, fecha_modificacion, estado, auditor1, auditor2) VALUES (?, ?, ?, 'activa', ?, ?)",
+        [nombre, now, now, a1, a2]
       );
       return result.lastInsertRowId;
     } else {
@@ -291,6 +392,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         estado: "activa",
         total_productos: 0,
         total_contados: 0,
+        auditor1: a1,
+        auditor2: a2,
       };
       storeRef.current.auds.push(aud);
       await saveAuditorias(storeRef.current.auds);
@@ -301,51 +404,91 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const importarProductos = useCallback(
     async (
       productosNuevos: Omit<ProductoInventario, "id" | "stock_fisico" | "auditoria_id" | "imeis_fisicos" | "inconsistencias">[],
-      auditoriaId: number
+      auditoriaId: number,
+      omitirDuplicados: boolean = true
     ) => {
       let insertados = 0;
       let duplicados = 0;
       const errores: string[] = [];
-      const imeiGlobal = new Map<string, string>();
+      let info = "";
 
       if (dbRef.current) {
-        for (const prod of productosNuevos) {
-          try {
-            const existe = await dbRef.current.getFirstAsync(
-              "SELECT id FROM productos WHERE codigo = ? AND auditoria_id = ?",
-              [prod.codigo, auditoriaId]
-            );
-            if (existe) { duplicados++; continue; }
+        // 1. Cargar todos los productos existentes en un Map (1 sola query)
+        const existentes = await dbRef.current.getAllAsync(
+          "SELECT id, codigo FROM productos WHERE auditoria_id = ?",
+          [auditoriaId]
+        ) as { id: number; codigo: string }[];
+        const existenteMap = new Map<string, number>(existentes.map((e) => [e.codigo, e.id]));
+        info = `SQLite | existentes: ${existentes.length}`;
 
-            if (prod.imeis_sistema) {
-              const imeis = prod.imeis_sistema.split(",").map((i: string) => i.trim()).filter(Boolean);
-              for (const imei of imeis) {
-                if (imeiGlobal.has(imei)) {
-                  errores.push(`IMEI duplicado: ${imei} en ${prod.codigo} y ${imeiGlobal.get(imei)}`);
-                } else { imeiGlobal.set(imei, prod.codigo); }
+        // 2. Todo dentro de una transacción para velocidad y atomicidad
+        const db = dbRef.current;
+        try {
+          await db.withTransactionAsync(async () => {
+            for (const prod of productosNuevos) {
+              const existeId = existenteMap.get(prod.codigo);
+              if (existeId !== undefined) {
+                if (omitirDuplicados) { duplicados++; continue; }
+                await db.runAsync(
+                  "UPDATE productos SET nombre = ?, stock_sistema = ?, imeis_sistema = ? WHERE id = ?",
+                  [prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, existeId]
+                );
+              } else {
+                await db.runAsync(
+                  "INSERT INTO productos (codigo, nombre, stock_sistema, imeis_sistema, auditoria_id) VALUES (?, ?, ?, ?, ?)",
+                  [prod.codigo, prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, auditoriaId]
+                );
+                existenteMap.set(prod.codigo, -1);
               }
+              insertados++;
             }
-
-            await dbRef.current.runAsync(
-              "INSERT INTO productos (codigo, nombre, stock_sistema, imeis_sistema, auditoria_id) VALUES (?, ?, ?, ?, ?)",
-              [prod.codigo, prod.nombre, prod.stock_sistema, prod.imeis_sistema ?? null, auditoriaId]
-            );
-            insertados++;
-          } catch (e) {
-            errores.push(`Error en ${prod.codigo}: ${e}`);
-          }
+          });
+        } catch (e) {
+          errores.push(`Error en transacción: ${e}`);
         }
-        await dbRef.current.runAsync(
+
+        const cntRow = await db.getFirstAsync(
+          "SELECT COUNT(*) as cnt FROM productos WHERE auditoria_id = ?",
+          [auditoriaId]
+        ) as { cnt: number } | null;
+        await db.runAsync(
           "UPDATE auditorias SET total_productos = ?, fecha_modificacion = ? WHERE id = ?",
-          [insertados, new Date().toISOString(), auditoriaId]
+          [cntRow?.cnt ?? insertados, new Date().toISOString(), auditoriaId]
         );
       } else {
-        const existingCodes = new Set(
+        const imeiGlobal = new Map<string, string>();
+        const preExistingCodes = new Set(
           storeRef.current.prods.filter((p) => p.auditoria_id === auditoriaId).map((p) => p.codigo)
         );
+        // Separamos los códigos ya guardados de los nuevos que se van insertando en este lote
+        const existingCodes = new Set(preExistingCodes);
+        const codigosDuplicadosEnExcel: string[] = [];
+        info = `Memoria | existentes: ${preExistingCodes.size}`;
         const newProds: ProductoInventario[] = [];
         for (const prod of productosNuevos) {
-          if (existingCodes.has(prod.codigo)) { duplicados++; continue; }
+          if (existingCodes.has(prod.codigo)) {
+            if (omitirDuplicados) { duplicados++; continue; }
+            // Duplicado dentro del mismo lote Excel
+            if (!preExistingCodes.has(prod.codigo)) {
+              codigosDuplicadosEnExcel.push(prod.codigo);
+              duplicados++;
+              continue; // ignorar la segunda ocurrencia
+            }
+            // Ya existía en BD → actualizar
+            const idx = storeRef.current.prods.findIndex(
+              (p) => p.codigo === prod.codigo && p.auditoria_id === auditoriaId
+            );
+            if (idx !== -1) {
+              storeRef.current.prods[idx] = {
+                ...storeRef.current.prods[idx],
+                nombre: prod.nombre,
+                stock_sistema: prod.stock_sistema,
+                imeis_sistema: prod.imeis_sistema ?? null,
+              };
+            }
+            insertados++;
+            continue;
+          }
           if (prod.imeis_sistema) {
             const imeis = prod.imeis_sistema.split(",").map((i) => i.trim()).filter(Boolean);
             for (const imei of imeis) {
@@ -364,40 +507,78 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             imeis_fisicos: null,
             auditoria_id: auditoriaId,
             inconsistencias: null,
+            comentario: null,
           });
           existingCodes.add(prod.codigo);
           insertados++;
         }
         storeRef.current.prods.push(...newProds);
+        const totalReal = storeRef.current.prods.filter((p) => p.auditoria_id === auditoriaId).length;
         storeRef.current.auds = storeRef.current.auds.map((a) =>
           a.id === auditoriaId
-            ? { ...a, total_productos: a.total_productos + insertados, fecha_modificacion: new Date().toISOString() }
+            ? { ...a, total_productos: totalReal, fecha_modificacion: new Date().toISOString() }
             : a
         );
         await Promise.all([
           saveProductos(storeRef.current.prods),
           saveAuditorias(storeRef.current.auds),
         ]);
+        if (codigosDuplicadosEnExcel.length > 0) {
+          const ejemplos = codigosDuplicadosEnExcel.slice(0, 5).join(", ");
+          const mas = codigosDuplicadosEnExcel.length > 5 ? ` y ${codigosDuplicadosEnExcel.length - 5} más` : "";
+          errores.push(
+            `⚠️ ${codigosDuplicadosEnExcel.length} código(s) duplicado(s) en el Excel (se guardó solo la primera aparición): ${ejemplos}${mas}`
+          );
+        }
       }
 
-      return { insertados, duplicados, errores };
+      return { insertados, duplicados, errores, info };
+    },
+    []
+  );
+
+  const verificarCodigosExistentes = useCallback(
+    async (codigos: string[], auditoriaId: number): Promise<string[]> => {
+      const existentes: string[] = [];
+      if (dbRef.current) {
+        for (const codigo of codigos) {
+          const existe = await dbRef.current.getFirstAsync(
+            "SELECT id FROM productos WHERE codigo = ? AND auditoria_id = ?",
+            [codigo, auditoriaId]
+          );
+          if (existe) existentes.push(codigo);
+        }
+      } else {
+        const existingCodes = new Set(
+          storeRef.current.prods
+            .filter((p) => p.auditoria_id === auditoriaId)
+            .map((p) => p.codigo)
+        );
+        for (const codigo of codigos) {
+          if (existingCodes.has(codigo)) existentes.push(codigo);
+        }
+      }
+      return existentes;
     },
     []
   );
 
   const actualizarConteo = useCallback(
-    async (productoId: number, stockFisico: number, imeisFisicos?: string[]) => {
+    async (productoId: number, stockFisico: number, imeisFisicos?: string[], comentario?: string) => {
       if (stockFisico < 0) throw new Error("El stock físico no puede ser negativo");
       const imeisFisicosStr = imeisFisicos && imeisFisicos.length > 0 ? imeisFisicos.join(",") : null;
+      const comentarioStr = comentario?.trim() || null;
 
       if (dbRef.current) {
         await dbRef.current.runAsync(
-          "UPDATE productos SET stock_fisico = ?, imeis_fisicos = ? WHERE id = ?",
-          [stockFisico, imeisFisicosStr, productoId]
+          "UPDATE productos SET stock_fisico = ?, imeis_fisicos = ?, comentario = ? WHERE id = ?",
+          [stockFisico, imeisFisicosStr, comentarioStr, productoId]
         );
       } else {
         storeRef.current.prods = storeRef.current.prods.map((p) =>
-          p.id === productoId ? { ...p, stock_fisico: stockFisico, imeis_fisicos: imeisFisicosStr } : p
+          p.id === productoId
+            ? { ...p, stock_fisico: stockFisico, imeis_fisicos: imeisFisicosStr, comentario: comentarioStr }
+            : p
         );
         await saveProductos(storeRef.current.prods);
       }
@@ -405,6 +586,27 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     },
     [refreshProductos]
   );
+
+  const actualizarAuditores = useCallback(async (id: number, auditor1: string, auditor2: string) => {
+    const a1 = auditor1.trim() || null;
+    const a2 = auditor2.trim() || null;
+    if (dbRef.current) {
+      // Solo actualiza si aún no tienen auditores registrados
+      await dbRef.current.runAsync(
+        "UPDATE auditorias SET auditor1 = ?, auditor2 = ? WHERE id = ? AND (auditor1 IS NULL OR auditor1 = '')",
+        [a1, a2, id]
+      );
+    } else {
+      storeRef.current.auds = storeRef.current.auds.map((a) =>
+        a.id === id && !a.auditor1 ? { ...a, auditor1: a1, auditor2: a2 } : a
+      );
+      await saveAuditorias(storeRef.current.auds);
+    }
+    // Actualiza el estado si es la auditoría activa y aún no tenía auditores
+    setAuditoriaActual((prev) =>
+      prev?.id === id && !prev.auditor1 ? { ...prev, auditor1: a1, auditor2: a2 } : prev
+    );
+  }, []);
 
   // Solo hace la operación de datos — sin tocar estado React
   const eliminarAuditoria = useCallback(async (id: number) => {
@@ -425,7 +627,65 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Limpia el estado React cuando se elimina la auditoría activa
+  const archivarAuditoria = useCallback(async (id: number) => {
+    const now = new Date().toISOString();
+    let prods: ProductoInventario[] = [];
+    let auditoriaNombre = String(id);
+    let totalProductos = 0;
+    let totalContados = 0;
+
+    if (dbRef.current) {
+      const aud = (await dbRef.current.getFirstAsync(
+        "SELECT * FROM auditorias WHERE id = ?", [id]
+      )) as Auditoria | undefined;
+      if (aud) auditoriaNombre = aud.nombre;
+      await dbRef.current.runAsync(
+        "UPDATE auditorias SET estado = 'archivada', fecha_modificacion = ? WHERE id = ?",
+        [now, id]
+      );
+      prods = (await dbRef.current.getAllAsync(
+        "SELECT * FROM productos WHERE auditoria_id = ?", [id]
+      )) as ProductoInventario[];
+      totalProductos = prods.length;
+      totalContados = prods.filter((p) => p.stock_fisico !== null).length;
+    } else {
+      const aud = storeRef.current.auds.find((a) => a.id === id);
+      if (aud) auditoriaNombre = aud.nombre;
+      storeRef.current.auds = storeRef.current.auds.map((a) =>
+        a.id === id ? { ...a, estado: "archivada" as const, fecha_modificacion: now } : a
+      );
+      await saveAuditorias(storeRef.current.auds);
+      prods = asGetProductosByAuditoria(id);
+      totalProductos = prods.length;
+      totalContados = prods.filter((p) => p.stock_fisico !== null).length;
+    }
+
+    setAuditoriaActual((prev) =>
+      prev?.id === id ? { ...prev, estado: "archivada" } : prev
+    );
+
+    // Sincronizar estado final con el servidor
+    const cfg = storeConfigRef.current;
+    if (cfg) {
+      const snapshot = prods.map((p) => ({
+        codigo: p.codigo,
+        nombre: p.nombre,
+        stock_sistema: p.stock_sistema,
+        stock_fisico: p.stock_fisico,
+        comentario: p.comentario,
+      }));
+      reportarProgreso(
+        cfg.codigo,
+        String(id),
+        auditoriaNombre,
+        totalProductos,
+        totalContados,
+        "archivada",
+        snapshot
+      ).catch(() => {});
+    }
+  }, [asGetProductosByAuditoria]);
+
   const limpiarAuditoriaActual = useCallback(() => {
     setAuditoriaActual(null);
     setProductos([]);
@@ -437,12 +697,39 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     const imeiMap = new Map<string, ProductoInventario[]>();
 
     for (const prod of productos) {
+      // Faltante: se contó menos de lo que indica el sistema
+      if (prod.stock_fisico !== null && prod.stock_fisico < prod.stock_sistema) {
+        const diff = prod.stock_sistema - prod.stock_fisico;
+        result.push({
+          tipo: "Faltante",
+          descripcion: `Faltan ${diff} unidad${diff > 1 ? "es" : ""}. Sistema: ${prod.stock_sistema} · Físico: ${prod.stock_fisico}${prod.comentario ? ` · Motivo: ${prod.comentario}` : ""}`,
+          codigo: prod.codigo,
+          nombre: prod.nombre,
+        });
+      }
+
+      // Sobrante: se contó más de lo que indica el sistema
+      if (prod.stock_fisico !== null && prod.stock_fisico > prod.stock_sistema) {
+        const diff = prod.stock_fisico - prod.stock_sistema;
+        result.push({
+          tipo: "Sobrante",
+          descripcion: `Sobran ${diff} unidad${diff > 1 ? "es" : ""}. Sistema: ${prod.stock_sistema} · Físico: ${prod.stock_fisico}${prod.comentario ? ` · Motivo: ${prod.comentario}` : ""}`,
+          codigo: prod.codigo,
+          nombre: prod.nombre,
+        });
+      }
+
+      // Stock físico negativo
       if (prod.stock_fisico !== null && prod.stock_fisico < 0) {
         result.push({ tipo: "Negativo", descripcion: `Stock físico negativo: ${prod.stock_fisico}`, codigo: prod.codigo, nombre: prod.nombre });
       }
+
+      // Stock sistema negativo
       if (prod.stock_sistema < 0) {
         result.push({ tipo: "Sistema Negativo", descripcion: `Stock en sistema negativo: ${prod.stock_sistema}`, codigo: prod.codigo, nombre: prod.nombre });
       }
+
+      // IMEI duplicados
       const imeis = [
         ...(prod.imeis_sistema?.split(",").map((i) => i.trim()).filter(Boolean) ?? []),
         ...(prod.imeis_fisicos?.split(",").map((i) => i.trim()).filter(Boolean) ?? []),
@@ -484,8 +771,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         cargarAuditorias,
         cargarAuditoria,
         importarProductos,
+        verificarCodigosExistentes,
         actualizarConteo,
+        actualizarAuditores,
         eliminarAuditoria,
+        archivarAuditoria,
         limpiarAuditoriaActual,
         detectarInconsistencias,
         refreshProductos,
