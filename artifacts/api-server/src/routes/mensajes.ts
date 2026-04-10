@@ -10,7 +10,12 @@ type MensajeRow = typeof mensajesTable.$inferSelect;
 
 async function sendPushNotifications(msg: MensajeRow) {
   const { deTienda, paraTienda, texto, adjuntoTipo, reenviado } = msg;
-  const preview = adjuntoTipo === "imagen" ? "📷 Imagen" : adjuntoTipo === "documento" ? "📎 Documento" : adjuntoTipo === "contacto" ? "👤 Contacto" : texto || "";
+  const preview =
+    adjuntoTipo === "imagen"    ? "📷 Imagen" :
+    adjuntoTipo === "documento" ? "📎 Documento" :
+    adjuntoTipo === "contacto"  ? "👤 Contacto" :
+    adjuntoTipo === "audio"     ? "🎤 Nota de voz" :
+    texto || "";
   const title = `${reenviado ? "↩ Reenviado • " : ""}${deTienda}`;
 
   let tokens: string[] = [];
@@ -21,7 +26,10 @@ async function sendPushNotifications(msg: MensajeRow) {
     const rows = await db.select().from(pushTokensTable).where(ne(pushTokensTable.tiendaCodigo, deTienda));
     tokens = rows.map((r) => r.token);
   }
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    console.log("[push-msg] No tokens para", paraTienda ?? "broadcast");
+    return;
+  }
 
   const messages = tokens.map((to) => ({
     to,
@@ -30,13 +38,35 @@ async function sendPushNotifications(msg: MensajeRow) {
     sound: "default",
     channelId: "mensajes",
     priority: "high",
+    ttl: 86400,
     data: { deTienda, paraTienda: paraTienda ?? "GENERAL" },
   }));
-  await fetch("https://exp.host/--/api/v2/push/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json", "Accept-Encoding": "gzip, deflate" },
-    body: JSON.stringify(messages),
-  });
+
+  try {
+    const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "Accept-Encoding": "gzip, deflate" },
+      body: JSON.stringify(messages),
+    });
+    const body = await resp.json().catch(() => ({})) as { data?: Array<{ status: string; message?: string; details?: unknown }> };
+    console.log("[push-msg] Expo resp:", resp.status, JSON.stringify(body?.data ?? body));
+
+    // Limpiar tokens inválidos (DeviceNotRegistered)
+    if (body?.data) {
+      for (let i = 0; i < body.data.length; i++) {
+        const item = body.data[i];
+        if (item.status === "error") {
+          const det = item.details as Record<string, string> | undefined;
+          if (det?.error === "DeviceNotRegistered" && tokens[i]) {
+            console.log("[push-msg] Borrando token inválido:", tokens[i].slice(0, 20) + "...");
+            await db.delete(pushTokensTable).where(eq(pushTokensTable.token, tokens[i])).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[push-msg] Error enviando push:", e);
+  }
 }
 
 const enviarSchema = z.object({
@@ -44,7 +74,7 @@ const enviarSchema = z.object({
   paraTienda: z.string().min(1).optional(),
   texto: z.string().max(1000).default(""),
   adjuntoUrl: z.string().url().optional(),
-  adjuntoTipo: z.enum(["imagen", "documento", "contacto"]).optional(),
+  adjuntoTipo: z.enum(["imagen", "documento", "contacto", "audio"]).optional(),
   adjuntoNombre: z.string().max(255).optional(),
   reenviado: z.boolean().optional().default(false),
 });

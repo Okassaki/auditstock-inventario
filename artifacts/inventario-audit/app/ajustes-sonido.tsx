@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import * as IntentLauncher from "expo-intent-launcher";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -172,14 +173,17 @@ export default function AjustesSonido() {
   async function openChannelSettings(channelId: "llamadas" | "mensajes") {
     if (Platform.OS !== "android") return;
     const pkg = "com.auditstock.inventario";
-    const intentUrl =
-      `intent:#Intent;` +
-      `action=android.settings.CHANNEL_NOTIFICATION_SETTINGS;` +
-      `S.android.provider.extra.APP_PACKAGE=${pkg};` +
-      `S.android.provider.extra.CHANNEL_ID=${channelId};` +
-      `end`;
     try {
-      await Linking.openURL(intentUrl);
+      await IntentLauncher.startActivityAsync(
+        "android.settings.CHANNEL_NOTIFICATION_SETTINGS",
+        {
+          data: `package:${pkg}`,
+          extra: {
+            "android.provider.extra.APP_PACKAGE": pkg,
+            "android.provider.extra.CHANNEL_ID": channelId,
+          },
+        }
+      );
     } catch {
       await Linking.openSettings();
     }
@@ -189,11 +193,16 @@ export default function AjustesSonido() {
     if (Platform.OS !== "android") return;
     const pkg = "com.auditstock.inventario";
     try {
-      await Linking.openURL(
-        `intent:#Intent;action=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS;data=package:${pkg};end`
+      await IntentLauncher.startActivityAsync(
+        "android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        { data: `package:${pkg}` }
       );
     } catch {
-      await Linking.openURL("android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS");
+      try {
+        await Linking.openURL("android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS");
+      } catch {
+        await Linking.openSettings();
+      }
     }
   }
 
