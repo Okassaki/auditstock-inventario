@@ -12,20 +12,22 @@ router.post("/push-debug", (req, res) => {
 
 const schema = z.object({
   token: z.string().min(1),
+  fcmToken: z.string().min(1).optional(),
 });
 
 router.put("/push-token/:tiendaCodigo", async (req, res) => {
   try {
     const { tiendaCodigo } = req.params;
-    const { token } = schema.parse(req.body);
+    const { token, fcmToken } = schema.parse(req.body);
 
     await db.insert(pushTokensTable)
-      .values({ tiendaCodigo, token, actualizadoAt: new Date() })
+      .values({ tiendaCodigo, token, fcmToken: fcmToken ?? null, actualizadoAt: new Date() })
       .onConflictDoUpdate({
         target: pushTokensTable.tiendaCodigo,
-        set: { token, actualizadoAt: new Date() },
+        set: { token, fcmToken: fcmToken ?? null, actualizadoAt: new Date() },
       });
 
+    console.log("[push-token] Guardado para", tiendaCodigo, "- fcmToken:", fcmToken ? "✅" : "❌ (solo Expo)");
     res.json({ ok: true });
   } catch (err: unknown) {
     const e = err as { name?: string };

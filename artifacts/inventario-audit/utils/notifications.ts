@@ -59,15 +59,30 @@ export async function registerForPushNotificationsAsync(
   }
 
   try {
-    const tokenData = await Notifications.getExpoPushTokenAsync({
+    // Obtener ExponentPushToken (para fallback vía Expo)
+    const expoTokenData = await Notifications.getExpoPushTokenAsync({
       projectId: "82653458-4336-45d4-9b1d-a3c6410411ca",
     });
-    const token = tokenData.data;
+    const token = expoTokenData.data;
+
+    // Obtener raw FCM token (para envío directo desde Firebase Admin SDK)
+    let fcmToken: string | undefined;
+    if (Platform.OS === "android") {
+      try {
+        const deviceTokenData = await Notifications.getDevicePushTokenAsync();
+        if (deviceTokenData?.data && typeof deviceTokenData.data === "string") {
+          fcmToken = deviceTokenData.data;
+          console.log("[push] FCM token obtenido ✅");
+        }
+      } catch (fcmErr) {
+        console.warn("[push] No se pudo obtener FCM token:", fcmErr);
+      }
+    }
 
     await fetch(`${API_URL}/push-token/${encodeURIComponent(tiendaCodigo)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, fcmToken }),
     });
 
     await reportToServer(tiendaCodigo, { ok: true, token });

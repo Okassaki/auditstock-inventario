@@ -2,6 +2,7 @@ import { Router } from "express";
 import { randomUUID } from "crypto";
 import { db, pushTokensTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { fcmReady, sendFcmNotification } from "../lib/fcm";
 
 const router = Router();
 
@@ -36,39 +37,67 @@ async function notifyCallPush(offer: CallOffer) {
       console.log("[push-call] No hay token para", offer.to);
       return;
     }
-    const token = rows[0].token;
-    console.log("[push-call] Enviando a", offer.to, "token:", token.slice(0, 30) + "...");
-    const resp = await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip, deflate",
-      },
-      body: JSON.stringify([
-        {
-          to: token,
-          title: `📞 Llamada entrante de ${offer.fromName}`,
-          body: offer.callType === "video"
-            ? "📹 Videollamada — toca para responder"
-            : "Toca para responder",
-          sound: "default",
-          channelId: "llamadas",
-          priority: "high",
-          ttl: 30,
-          data: {
-            type: "call_offer",
-            from: offer.from,
-            fromName: offer.fromName,
-            callType: offer.callType,
-            roomId: offer.roomId,
-            offerId: offer.offerId,
-          },
+    const row = rows[0];
+    const callTitle = `📞 Llamada entrante de ${offer.fromName}`;
+    const callBody = offer.callType === "video"
+      ? "📹 Videollamada — toca para responder"
+      : "Toca para responder";
+    const callData: Record<string, string> = {
+      type: "call_offer",
+      from: offer.from,
+      fromName: offer.fromName,
+      callType: offer.callType,
+      roomId: offer.roomId,
+      offerId: offer.offerId,
+    };
+
+    if (row.fcmToken && fcmReady()) {
+      console.log("[push-call] Enviando via FCM directo a", offer.to);
+      const result = await sendFcmNotification({
+        fcmToken: row.fcmToken,
+        title: callTitle,
+        body: callBody,
+        channelId: "llamadas",
+        priority: "high",
+        ttlSeconds: 30,
+        data: callData,
+      });
+      if (!result.success) {
+        console.error("[push-call] FCM error:", result.error);
+        if (result.error?.includes("registration-token-not-registered") || result.error?.includes("invalid-registration-token")) {
+          await db.update(pushTokensTable)
+            .set({ fcmToken: null })
+            .where(eq(pushTokensTable.tiendaCodigo, offer.to))
+            .catch(() => {});
+        }
+      }
+    } else {
+      console.log("[push-call] Enviando via Expo push a", offer.to, "(sin fcmToken o FCM no listo)");
+      const token = row.token;
+      console.log("[push-call] token:", token.slice(0, 30) + "...");
+      const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip, deflate",
         },
-      ]),
-    });
-    const body = await resp.json().catch(() => ({})) as { data?: Array<{ status: string; message?: string; details?: unknown }> };
-    console.log("[push-call] Expo resp:", resp.status, JSON.stringify(body?.data ?? body));
+        body: JSON.stringify([
+          {
+            to: token,
+            title: callTitle,
+            body: callBody,
+            sound: "default",
+            channelId: "llamadas",
+            priority: "high",
+            ttl: 30,
+            data: callData,
+          },
+        ]),
+      });
+      const body = await resp.json().catch(() => ({})) as { data?: Array<{ status: string; message?: string; details?: unknown }> };
+      console.log("[push-call] Expo resp:", resp.status, JSON.stringify(body?.data ?? body));
+    }
   } catch (e) {
     console.error("[push-call] Error:", e);
   }

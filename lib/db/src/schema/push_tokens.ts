@@ -4,6 +4,7 @@ export const pushTokensTable = pgTable("push_tokens", {
   id: serial("id").primaryKey(),
   tiendaCodigo: text("tienda_codigo").notNull().unique(),
   token: text("token").notNull(),
+  fcmToken: text("fcm_token"),
   actualizadoAt: timestamp("actualizado_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

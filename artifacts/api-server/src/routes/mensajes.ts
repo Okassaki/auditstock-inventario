@@ -3,6 +3,7 @@ import { db, mensajesTable, pushTokensTable } from "@workspace/db";
 import { eq, or, isNull, desc, and, gt, ne, sql as drizzleSql } from "drizzle-orm";
 import { z } from "zod";
 import { broadcastNewMessage } from "../lib/signaling";
+import { fcmReady, sendFcmNotification } from "../lib/fcm";
 
 const router: IRouter = Router();
 
@@ -18,28 +19,56 @@ async function sendPushNotifications(msg: MensajeRow) {
     texto || "";
   const title = `${reenviado ? "↩ Reenviado • " : ""}${deTienda}`;
 
-  let tokens: string[] = [];
+  let rows: Array<{ token: string; fcmToken: string | null; tiendaCodigo: string }> = [];
   if (paraTienda) {
-    const rows = await db.select().from(pushTokensTable).where(eq(pushTokensTable.tiendaCodigo, paraTienda));
-    tokens = rows.map((r) => r.token);
+    rows = await db.select().from(pushTokensTable).where(eq(pushTokensTable.tiendaCodigo, paraTienda));
   } else {
-    const rows = await db.select().from(pushTokensTable).where(ne(pushTokensTable.tiendaCodigo, deTienda));
-    tokens = rows.map((r) => r.token);
+    rows = await db.select().from(pushTokensTable).where(ne(pushTokensTable.tiendaCodigo, deTienda));
   }
-  if (tokens.length === 0) {
+  if (rows.length === 0) {
     console.log("[push-msg] No tokens para", paraTienda ?? "broadcast");
     return;
   }
 
+  for (const row of rows) {
+    if (row.fcmToken && fcmReady()) {
+      console.log("[push-msg] Enviando via FCM directo a", row.tiendaCodigo);
+      const result = await sendFcmNotification({
+        fcmToken: row.fcmToken,
+        title,
+        body: preview,
+        channelId: "mensajes",
+        priority: "high",
+        ttlSeconds: 86400,
+        data: { deTienda, paraTienda: paraTienda ?? "GENERAL" },
+      });
+      if (!result.success) {
+        console.error("[push-msg] FCM error para", row.tiendaCodigo, ":", result.error);
+        if (result.error?.includes("registration-token-not-registered") || result.error?.includes("invalid-registration-token")) {
+          console.log("[push-msg] Borrando fcmToken inválido para", row.tiendaCodigo);
+          await db.update(pushTokensTable)
+            .set({ fcmToken: null })
+            .where(eq(pushTokensTable.tiendaCodigo, row.tiendaCodigo))
+            .catch(() => {});
+        }
+      }
+    } else {
+      console.log("[push-msg] Enviando via Expo push a", row.tiendaCodigo, "(sin fcmToken o FCM no listo)");
+      await sendExpoNotification([row.token], title, preview, { deTienda, paraTienda: paraTienda ?? "GENERAL" });
+    }
+  }
+}
+
+async function sendExpoNotification(tokens: string[], title: string, body: string, data: Record<string, string>) {
   const messages = tokens.map((to) => ({
     to,
     title,
-    body: preview,
+    body,
     sound: "default",
     channelId: "mensajes",
     priority: "high",
     ttl: 86400,
-    data: { deTienda, paraTienda: paraTienda ?? "GENERAL" },
+    data,
   }));
 
   try {
@@ -48,13 +77,12 @@ async function sendPushNotifications(msg: MensajeRow) {
       headers: { "Content-Type": "application/json", "Accept": "application/json", "Accept-Encoding": "gzip, deflate" },
       body: JSON.stringify(messages),
     });
-    const body = await resp.json().catch(() => ({})) as { data?: Array<{ status: string; message?: string; details?: unknown }> };
-    console.log("[push-msg] Expo resp:", resp.status, JSON.stringify(body?.data ?? body));
+    const respBody = await resp.json().catch(() => ({})) as { data?: Array<{ status: string; message?: string; details?: unknown }> };
+    console.log("[push-msg] Expo resp:", resp.status, JSON.stringify(respBody?.data ?? respBody));
 
-    // Limpiar tokens inválidos (DeviceNotRegistered)
-    if (body?.data) {
-      for (let i = 0; i < body.data.length; i++) {
-        const item = body.data[i];
+    if (respBody?.data) {
+      for (let i = 0; i < respBody.data.length; i++) {
+        const item = respBody.data[i];
         if (item.status === "error") {
           const det = item.details as Record<string, string> | undefined;
           if (det?.error === "DeviceNotRegistered" && tokens[i]) {
@@ -65,7 +93,7 @@ async function sendPushNotifications(msg: MensajeRow) {
       }
     }
   } catch (e) {
-    console.error("[push-msg] Error enviando push:", e);
+    console.error("[push-msg] Error enviando push Expo:", e);
   }
 }
 
@@ -247,7 +275,6 @@ router.delete("/mensajes/:id", async (req, res) => {
   try {
     if (tipo === "todos") {
       if (!yo) return res.status(400).json({ error: "yo requerido para eliminar para todos" });
-      // Solo el remitente puede eliminar para todos
       const msg = await db.select({ deTienda: mensajesTable.deTienda })
         .from(mensajesTable)
         .where(eq(mensajesTable.id, id))
