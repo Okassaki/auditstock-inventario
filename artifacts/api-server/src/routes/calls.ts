@@ -32,8 +32,13 @@ async function notifyCallPush(offer: CallOffer) {
       .select()
       .from(pushTokensTable)
       .where(eq(pushTokensTable.tiendaCodigo, offer.to));
-    if (rows.length === 0) return;
-    await fetch("https://exp.host/--/api/v2/push/send", {
+    if (rows.length === 0) {
+      console.log("[push-call] No hay token para", offer.to);
+      return;
+    }
+    const token = rows[0].token;
+    console.log("[push-call] Enviando a", offer.to, "token:", token.slice(0, 30) + "...");
+    const resp = await fetch("https://exp.host/--/api/v2/push/send", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -42,7 +47,7 @@ async function notifyCallPush(offer: CallOffer) {
       },
       body: JSON.stringify([
         {
-          to: rows[0].token,
+          to: token,
           title: `📞 Llamada entrante de ${offer.fromName}`,
           body: offer.callType === "video"
             ? "📹 Videollamada — toca para responder"
@@ -50,6 +55,7 @@ async function notifyCallPush(offer: CallOffer) {
           sound: "default",
           channelId: "llamadas",
           priority: "high",
+          ttl: 30,
           data: {
             type: "call_offer",
             from: offer.from,
@@ -61,8 +67,10 @@ async function notifyCallPush(offer: CallOffer) {
         },
       ]),
     });
+    const body = await resp.json().catch(() => ({})) as { data?: Array<{ status: string; message?: string; details?: unknown }> };
+    console.log("[push-call] Expo resp:", resp.status, JSON.stringify(body?.data ?? body));
   } catch (e) {
-    console.error("call push error:", e);
+    console.error("[push-call] Error:", e);
   }
 }
 
