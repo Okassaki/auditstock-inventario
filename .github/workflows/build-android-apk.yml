@@ -10,12 +10,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "app/**"
-      - "components/**"
-      - "utils/**"
-      - "context/**"
-      - "package.json"
-      - "app.json"
+      - "artifacts/inventario-audit/app/**"
+      - "artifacts/inventario-audit/components/**"
+      - "artifacts/inventario-audit/utils/**"
+      - "artifacts/inventario-audit/context/**"
+      - "artifacts/inventario-audit/package.json"
+      - "artifacts/inventario-audit/app.json"
+      - ".github/workflows/build-android-apk.yml"
 
 jobs:
   build:
@@ -23,6 +24,10 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: write
+
+    defaults:
+      run:
+        working-directory: artifacts/inventario-audit
 
     steps:
       - name: Checkout
@@ -33,6 +38,7 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc
           sudo apt-get clean
           df -h
+        working-directory: ${{ github.workspace }}
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -41,6 +47,7 @@ jobs:
 
       - name: Install pnpm
         run: npm install -g pnpm@10
+        working-directory: ${{ github.workspace }}
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -50,6 +57,7 @@ jobs:
 
       - name: Instalar dependencias
         run: pnpm install --no-frozen-lockfile --shamefully-hoist
+        working-directory: ${{ github.workspace }}
 
       - name: Expo Prebuild
         env:
@@ -62,7 +70,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('artifacts/inventario-audit/android/**/*.gradle*', 'artifacts/inventario-audit/android/**/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
           save-always: true
 
@@ -114,3 +122,4 @@ jobs:
         run: |
           ls -lh /tmp/AuditStock.apk
           echo "✅ Release ${{ steps.ver.outputs.tag }} publicado"
+        working-directory: ${{ github.workspace }}
