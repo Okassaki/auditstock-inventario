@@ -57,11 +57,12 @@ function RootLayoutNav() {
   const segments = useSegments();
   const notifListenerRef = useRef<Notifications.Subscription | null>(null);
 
-  // Verificar actualizaciones una vez que la app cargó (con delay para no interferir con el inicio)
+  // Verificar actualizaciones al abrir la app y cada 10 minutos
   useEffect(() => {
     if (storeLoading || bossLoading) return;
-    const t = setTimeout(() => checkForUpdate({ silent: true }), 30_000);
-    return () => clearTimeout(t);
+    const initial = setTimeout(() => checkForUpdate({ silent: true }), 5_000);
+    const interval = setInterval(() => checkForUpdate({ silent: true }), 10 * 60 * 1000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
   }, [storeLoading, bossLoading]);
 
   // Registrar push token cuando la tienda o el jefe están listos
