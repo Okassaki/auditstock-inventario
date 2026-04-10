@@ -404,10 +404,16 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
     }
     setPlayingId(msg.id);
     setPlayPos((p) => ({ ...p, [msg.id]: 0 }));
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    // Forzar altavoz: después de grabar, Android enruta al auricular por defecto
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      playThroughEarpieceAndroid: false,
+    });
     const { sound } = await Audio.Sound.createAsync(
       { uri: msg.adjuntoUrl },
-      { shouldPlay: true },
+      { shouldPlay: false, volume: 1.0 },
       (status) => {
         if (status.isLoaded) {
           const prog = status.durationMillis ? status.positionMillis / status.durationMillis : 0;
@@ -421,6 +427,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
       }
     );
     soundRef.current = sound;
+    await sound.playAsync();
   }
 
   // Cleanup al desmontar
