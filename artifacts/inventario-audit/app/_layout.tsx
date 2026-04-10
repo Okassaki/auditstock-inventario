@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import * as Updates from "expo-updates";
+
 import React, { useEffect, useRef } from "react";
 import { Alert, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -160,18 +160,6 @@ function RootLayoutNav() {
   );
 }
 
-async function checkForUpdates() {
-  if (isWeb) return;
-  try {
-    const update = await Updates.checkForUpdateAsync();
-    if (update.isAvailable) {
-      await Updates.fetchUpdateAsync();
-      await Updates.reloadAsync();
-    }
-  } catch {
-    // Sin conexión o en desarrollo, ignorar
-  }
-}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(
@@ -198,7 +186,6 @@ export default function RootLayout() {
   useEffect(() => {
     if (ready) {
       SplashScreen.hideAsync().catch(() => {});
-      checkForUpdates();
     }
   }, [ready]);
 
