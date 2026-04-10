@@ -25,6 +25,7 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
 import { registerForPushNotificationsAsync, openNotificationSettings } from "@/utils/notifications";
 import { saveCodigoForBackground, registerBackgroundMessages } from "@/utils/backgroundMessages";
+import { checkForUpdate } from "@/utils/updateChecker";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -55,6 +56,13 @@ function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
   const notifListenerRef = useRef<Notifications.Subscription | null>(null);
+
+  // Verificar actualizaciones una vez que la app cargó (con delay para no interferir con el inicio)
+  useEffect(() => {
+    if (storeLoading || bossLoading) return;
+    const t = setTimeout(() => checkForUpdate({ silent: true }), 30_000);
+    return () => clearTimeout(t);
+  }, [storeLoading, bossLoading]);
 
   // Registrar push token cuando la tienda o el jefe están listos
   useEffect(() => {
