@@ -38,6 +38,12 @@ Notifications.setNotificationHandler({
 
 SplashScreen.preventAutoHideAsync();
 
+// Seguro de último recurso: si React crashea o los hooks se cuelgan,
+// ocultar el splash a los 5s directamente desde el módulo (fuera de React).
+setTimeout(() => {
+  SplashScreen.hideAsync().catch(() => {});
+}, 5000);
+
 const queryClient = new QueryClient();
 
 const isWeb = Platform.OS === "web";
