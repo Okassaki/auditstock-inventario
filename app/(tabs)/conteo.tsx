@@ -4,14 +4,15 @@ import React, { useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
@@ -23,6 +24,7 @@ import {
 import { SearchBar } from "@/components/ui/SearchBar";
 import { ProductoCard } from "@/components/ui/ProductoCard";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
+import { useColorScheme } from "@/hooks/useColorScheme";
 
 export default function ConteoScreen() {
   const colorScheme = useColorScheme();
@@ -41,6 +43,9 @@ export default function ConteoScreen() {
   const [imeisList, setImeisList] = useState<string[]>([]);
   const [showImeiScanner, setShowImeiScanner] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [comentarioInput, setComentarioInput] = useState("");
+  const [showComentarioModal, setShowComentarioModal] = useState(false);
+  const [pendingStock, setPendingStock] = useState<number | null>(null);
 
   const productosFiltrados = useMemo(() => {
     if (!query.trim()) return productos;
@@ -71,23 +76,49 @@ export default function ConteoScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const handleGuardar = async () => {
+  const handleGuardar = () => {
     if (!selectedProduct) return;
     const stock = parseInt(stockInput, 10);
     if (isNaN(stock) || stock < 0) {
       Alert.alert("Stock inválido", "Ingresa un número mayor o igual a 0.");
       return;
     }
+    const hayDiferencia = stock !== selectedProduct.stock_sistema;
+    if (hayDiferencia) {
+      // Guardamos el stock pendiente y mostramos el modal de comentario
+      setPendingStock(stock);
+      setComentarioInput(selectedProduct.comentario ?? "");
+      setShowComentarioModal(true);
+      return;
+    }
+    // Sin diferencia: guardar directamente
+    doGuardar(stock, undefined);
+  };
+
+  const doGuardar = async (stock: number, comentario: string | undefined) => {
+    if (!selectedProduct) return;
     setIsSaving(true);
     try {
-      await actualizarConteo(selectedProduct.id, stock, imeisList);
+      await actualizarConteo(selectedProduct.id, stock, imeisList, comentario);
       setSelectedProduct(null);
+      setShowComentarioModal(false);
+      setPendingStock(null);
+      setComentarioInput("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       Alert.alert("Error", String(e));
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleConfirmarComentario = () => {
+    if (!comentarioInput.trim()) {
+      Alert.alert("Comentario requerido", "Debes explicar el motivo de la diferencia antes de guardar.");
+      return;
+    }
+    if (pendingStock === null) return;
+    doGuardar(pendingStock, comentarioInput.trim());
   };
 
   const handleAddImei = (imei: string) => {
@@ -120,6 +151,22 @@ export default function ConteoScreen() {
           </Text>
           <Text style={[styles.emptyDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
             Ve a Inicio y selecciona o crea una auditoría para comenzar el conteo.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (auditoriaActual.estado === "archivada") {
+    return (
+      <View style={[styles.container, { backgroundColor: C.background }]}>
+        <View style={[styles.emptyState, { paddingTop: topPad + 40 }]}>
+          <Feather name="archive" size={64} color={C.textMuted} />
+          <Text style={[styles.emptyTitle, { color: C.text, fontFamily: "Inter_600SemiBold" }]}>
+            Auditoría archivada
+          </Text>
+          <Text style={[styles.emptyDesc, { color: C.textSecondary, fontFamily: "Inter_400Regular" }]}>
+            Esta auditoría está archivada y no se puede editar. Puedes consultar los resultados en las pestañas Resumen y Alertas.
           </Text>
         </View>
       </View>
@@ -196,7 +243,7 @@ export default function ConteoScreen() {
         onRequestClose={() => setSelectedProduct(null)}
       >
         {selectedProduct && (
-          <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <View
               style={[
                 styles.modalBox,
@@ -204,6 +251,12 @@ export default function ConteoScreen() {
               ]}
             >
               <View style={styles.modalHandle} />
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ gap: 14 }}
+              >
 
               <View style={[styles.productHeader, { backgroundColor: C.surfaceElevated, borderRadius: 12, padding: 14 }]}>
                 <Text style={[styles.productCodigo, { color: C.primary, fontFamily: "Inter_600SemiBold" }]}>
@@ -262,7 +315,6 @@ export default function ConteoScreen() {
                     },
                   ]}
                   keyboardType="number-pad"
-                  textAlign="center"
                   selectTextOnFocus
                 />
                 <TouchableOpacity
@@ -334,6 +386,8 @@ export default function ConteoScreen() {
                 </View>
               )}
 
+              </ScrollView>
+
               <View style={styles.modalBtns}>
                 <TouchableOpacity
                   onPress={() => setSelectedProduct(null)}
@@ -358,7 +412,7 @@ export default function ConteoScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         )}
         <BarcodeScannerModal
           visible={showImeiScanner}
@@ -369,6 +423,117 @@ export default function ConteoScreen() {
           }}
           title="Escanear IMEI"
         />
+      </Modal>
+
+      {/* Modal de comentario — aparece tras presionar Guardar cuando hay diferencia */}
+      <Modal
+        visible={showComentarioModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowComentarioModal(false)}
+      >
+        {selectedProduct && pendingStock !== null && (
+          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <View style={[styles.modalBox, { backgroundColor: C.surface, paddingBottom: botPad + 16 }]}>
+              <View style={styles.modalHandle} />
+
+              {/* Resumen de la diferencia */}
+              <View
+                style={[
+                  styles.difResumen,
+                  {
+                    backgroundColor:
+                      pendingStock < selectedProduct.stock_sistema
+                        ? `${C.danger}15`
+                        : `${C.warning}15`,
+                    borderColor:
+                      pendingStock < selectedProduct.stock_sistema
+                        ? `${C.danger}40`
+                        : `${C.warning}40`,
+                  },
+                ]}
+              >
+                <Feather
+                  name={pendingStock < selectedProduct.stock_sistema ? "trending-down" : "trending-up"}
+                  size={20}
+                  color={pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      color: pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning,
+                      fontFamily: "Inter_700Bold",
+                      fontSize: 15,
+                    }}
+                  >
+                    {pendingStock < selectedProduct.stock_sistema ? "Faltante" : "Sobrante"}{" "}
+                    de {Math.abs(pendingStock - selectedProduct.stock_sistema)} unidad
+                    {Math.abs(pendingStock - selectedProduct.stock_sistema) > 1 ? "es" : ""}
+                  </Text>
+                  <Text style={{ color: C.textSecondary, fontFamily: "Inter_400Regular", fontSize: 13 }}>
+                    {selectedProduct.nombre}
+                  </Text>
+                  <Text style={{ color: C.textMuted, fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 }}>
+                    Sistema: {selectedProduct.stock_sistema} · Físico: {pendingStock}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={[styles.inputLabel, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                {pendingStock < selectedProduct.stock_sistema
+                  ? "¿POR QUÉ FALTA STOCK?"
+                  : "¿POR QUÉ HAY STOCK DE MÁS?"}
+              </Text>
+              <TextInput
+                value={comentarioInput}
+                onChangeText={setComentarioInput}
+                placeholder="Describe el motivo de la diferencia..."
+                placeholderTextColor={C.textMuted}
+                multiline
+                numberOfLines={4}
+                autoFocus
+                style={[
+                  styles.comentarioInput,
+                  {
+                    backgroundColor: C.surfaceElevated,
+                    borderColor:
+                      pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning,
+                    color: C.text,
+                    fontFamily: "Inter_400Regular",
+                  },
+                ]}
+              />
+
+              <View style={styles.modalBtns}>
+                <TouchableOpacity
+                  onPress={() => setShowComentarioModal(false)}
+                  style={[styles.btnSecondary, { borderColor: C.surfaceBorder }]}
+                >
+                  <Text style={[styles.btnSecondaryText, { color: C.textSecondary, fontFamily: "Inter_600SemiBold" }]}>
+                    Volver
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleConfirmarComentario}
+                  disabled={isSaving || !comentarioInput.trim()}
+                  style={[
+                    styles.btnPrimary,
+                    {
+                      backgroundColor: comentarioInput.trim()
+                        ? pendingStock < selectedProduct.stock_sistema ? C.danger : C.warning
+                        : C.textMuted,
+                    },
+                  ]}
+                >
+                  <Feather name="check" size={18} color="#fff" />
+                  <Text style={[styles.btnPrimaryText, { fontFamily: "Inter_700Bold" }]}>
+                    {isSaving ? "Guardando..." : "Confirmar y guardar"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        )}
       </Modal>
     </View>
   );
@@ -448,6 +613,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     fontSize: 26,
+    textAlign: "center",
+    textAlignVertical: "center",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   imeiSection: { gap: 10 },
   imeiInputRow: { flexDirection: "row", gap: 8 },
@@ -482,6 +651,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   imeiChipText: { flex: 1, fontSize: 13 },
+  difResumen: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  comentarioInput: {
+    borderWidth: 2,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 4 },
   btnSecondary: {
     flex: 1,
