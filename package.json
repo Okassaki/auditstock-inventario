@@ -58,7 +58,7 @@
   "dependencies": {
     "buffer": "^6.0.3",
     "expo-av": "~16.0.8",
-    "expo-background-fetch": "^55.0.12",
+    "expo-background-fetch": "~14.0.9",
     "expo-camera": "^17.0.10",
     "expo-contacts": "^15.0.11",
     "expo-device": "^8.0.10",
@@ -68,8 +68,7 @@
     "expo-print": "^15.0.8",
     "expo-sharing": "^14.0.8",
     "expo-sqlite": "^16.0.10",
-    "expo-task-manager": "^55.0.12",
-    "expo-updates": "~29.0.16",
+    "expo-task-manager": "~14.0.9",
     "react-native-webview": "^13.15.0",
     "xlsx": "^0.18.5"
   }
