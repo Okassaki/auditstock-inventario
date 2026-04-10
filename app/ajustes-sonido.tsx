@@ -5,6 +5,8 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -167,6 +169,34 @@ export default function AjustesSonido() {
     setTimeout(() => setPreviewing(null), 4000);
   }
 
+  async function openChannelSettings(channelId: "llamadas" | "mensajes") {
+    if (Platform.OS !== "android") return;
+    const pkg = "com.auditstock.inventario";
+    const intentUrl =
+      `intent:#Intent;` +
+      `action=android.settings.CHANNEL_NOTIFICATION_SETTINGS;` +
+      `S.android.provider.extra.APP_PACKAGE=${pkg};` +
+      `S.android.provider.extra.CHANNEL_ID=${channelId};` +
+      `end`;
+    try {
+      await Linking.openURL(intentUrl);
+    } catch {
+      await Linking.openSettings();
+    }
+  }
+
+  async function openBatterySettings() {
+    if (Platform.OS !== "android") return;
+    const pkg = "com.auditstock.inventario";
+    try {
+      await Linking.openURL(
+        `intent:#Intent;action=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS;data=package:${pkg};end`
+      );
+    } catch {
+      await Linking.openURL("android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS");
+    }
+  }
+
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
@@ -287,6 +317,55 @@ export default function AjustesSonido() {
             {" "}para ver los tonos del sistema.
           </Text>
         </View>
+
+        {/* ── Configuración del sistema Android ──────────────────────────── */}
+        {Platform.OS === "android" && (
+          <>
+            <Text style={[s.section, { marginTop: 32 }]}>CONFIGURACIÓN DEL SISTEMA</Text>
+
+            <TouchableOpacity style={s.row} onPress={() => openChannelSettings("llamadas")}>
+              <View style={s.iconBox}>
+                <Feather name="bell" size={18} color={TEXT_SEC} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rowLabel}>Canal: Llamadas</Text>
+                <Text style={s.subLabel}>Elegí sonido, vibración y prioridad en Android</Text>
+              </View>
+              <Feather name="external-link" size={16} color={TEXT_SEC} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.row} onPress={() => openChannelSettings("mensajes")}>
+              <View style={s.iconBox}>
+                <Feather name="message-circle" size={18} color={TEXT_SEC} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rowLabel}>Canal: Mensajes</Text>
+                <Text style={s.subLabel}>Elegí sonido, vibración y prioridad en Android</Text>
+              </View>
+              <Feather name="external-link" size={16} color={TEXT_SEC} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[s.row, { marginTop: 8 }]} onPress={openBatterySettings}>
+              <View style={s.iconBox}>
+                <Feather name="battery-charging" size={18} color={TEXT_SEC} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rowLabel}>Notificaciones en segundo plano</Text>
+                <Text style={s.subLabel}>Desactivar optimización de batería para recibir siempre</Text>
+              </View>
+              <Feather name="external-link" size={16} color={TEXT_SEC} />
+            </TouchableOpacity>
+
+            <View style={[s.tipBox, { marginTop: 12 }]}>
+              <Feather name="smartphone" size={14} color={PRIMARY} style={{ marginTop: 1 }} />
+              <Text style={s.tipText}>
+                Desde los canales del sistema podés elegir cualquier ringtone instalado en el dispositivo, 
+                incluidos los del sistema Android. Para que las notificaciones lleguen con el app cerrado, 
+                desactivá la optimización de batería.
+              </Text>
+            </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );
