@@ -414,9 +414,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
         playThroughEarpieceAndroid: false,
-        shouldDuckAndroid: false,
       });
       await soundRef.current.playAsync();
       setPlayingId(msg.id);
@@ -439,9 +437,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
         playThroughEarpieceAndroid: false,
-        shouldDuckAndroid: false,
       });
 
       const { sound } = await Audio.Sound.createAsync(
@@ -868,12 +864,12 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
               <Animated.View style={[s.grabDot, { opacity: grabPulse }]} />
               <Text style={s.grabDurText}>{formatSegs(duracionGrab)}</Text>
             </View>
-            <Pressable
+            <TouchableOpacity
               style={[s.sendBtn, { backgroundColor: "#FF4757" }]}
-              onPressOut={() => detenerGrabacion(false)}
+              onPress={() => detenerGrabacion(false)}
             >
               <Feather name="send" size={18} color="#fff" />
-            </Pressable>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={[s.inputBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -900,13 +896,12 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                 {enviando ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="send" size={18} color="#fff" />}
               </TouchableOpacity>
             ) : (
-              <Pressable
+              <TouchableOpacity
                 style={[s.sendBtn, { backgroundColor: T.primary }]}
-                onLongPress={iniciarGrabacion}
-                delayLongPress={200}
+                onPress={iniciarGrabacion}
               >
                 <Feather name="mic" size={18} color="#fff" />
-              </Pressable>
+              </TouchableOpacity>
             )}
           </View>
         )}
