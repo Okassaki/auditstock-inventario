@@ -1,4 +1,4 @@
-const { withAndroidManifest, withDangerousMod } = require("@expo/config-plugins");
+const { withAndroidManifest, withDangerousMod, withAppBuildGradle } = require("@expo/config-plugins");
 const fs   = require("fs");
 const path = require("path");
 
@@ -35,7 +35,18 @@ function withCallFullScreenIntent(config) {
     },
   ]);
 
-  // ── 2. Patch AndroidManifest.xml ─────────────────────────────────────────
+  // ── 2. Add firebase-messaging dependency to app/build.gradle ────────────
+  config = withAppBuildGradle(config, (cfg) => {
+    if (!cfg.modResults.contents.includes("firebase-messaging")) {
+      cfg.modResults.contents = cfg.modResults.contents.replace(
+        /dependencies\s*\{/,
+        `dependencies {\n    implementation 'com.google.firebase:firebase-messaging:24.0.3'\n`
+      );
+    }
+    return cfg;
+  });
+
+  // ── 3. Patch AndroidManifest.xml ─────────────────────────────────────────
   config = withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults;
     const app      = manifest.manifest.application[0];
