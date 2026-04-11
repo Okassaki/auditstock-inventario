@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -18,7 +18,7 @@ import { Colors } from "@/constants/colors";
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
 
 const C = Colors.dark;
-const POLL = 10000;
+const POLL = 5000;
 
 function formatTime(iso: string) {
   const d = new Date(iso), hoy = new Date();
@@ -44,8 +44,9 @@ export default function ChatListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchAll = useCallback(async (manual = false) => {
+  const fetchAll = useCallback(async (manual = false, attempt = 0) => {
     if (!storeConfig) return;
     if (manual) setRefreshing(true);
     try {
@@ -57,7 +58,11 @@ export default function ChatListScreen() {
       setConversaciones(cs);
       setError(null);
     } catch (e: any) {
-      setError(e?.message ?? "Error de conexión");
+      if (attempt === 0 && !manual) {
+        retryRef.current = setTimeout(() => fetchAll(false, 1), 3000);
+      } else {
+        setError("Sin conexión al servidor");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -67,11 +72,11 @@ export default function ChatListScreen() {
   useEffect(() => {
     fetchAll();
     const interval = setInterval(() => fetchAll(), POLL);
-    // Actualización instantánea via WebSocket
     const sub = DeviceEventEmitter.addListener("chatNewMessage", () => fetchAll());
     return () => {
       clearInterval(interval);
       sub.remove();
+      if (retryRef.current) clearTimeout(retryRef.current);
     };
   }, [fetchAll]);
 
