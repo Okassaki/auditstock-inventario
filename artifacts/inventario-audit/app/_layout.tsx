@@ -124,9 +124,10 @@ function RootLayoutNav() {
 
       // Notificación de llamada entrante
       if (data.type === "call_offer") {
+        const callerId = data.caller ?? data.from;
         const info: IncomingCallInfo = {
-          from: data.from,
-          fromName: data.fromName ?? data.from,
+          from: callerId,
+          fromName: data.fromName ?? callerId,
           type: (data.callType as "audio" | "video") ?? "audio",
           roomId: data.roomId,
         };
