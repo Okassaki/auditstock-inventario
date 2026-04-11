@@ -2,7 +2,7 @@ import { Router } from "express";
 import { randomUUID } from "crypto";
 import { db, pushTokensTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { fcmReady, sendFcmNotification } from "../lib/fcm";
+import { fcmReady, sendFcmDataMessage, sendFcmNotification } from "../lib/fcm";
 
 const router = Router();
 
@@ -52,12 +52,11 @@ async function notifyCallPush(offer: CallOffer) {
     };
 
     if (row.fcmToken && fcmReady()) {
-      console.log("[push-call] Enviando via FCM directo a", offer.to);
-      const result = await sendFcmNotification({
+      console.log("[push-call] Enviando via FCM data-only a", offer.to);
+      // Data-only: nuestro CallNotificationService.kt intercepta y muestra
+      // la notificación estilo WhatsApp con fullScreenIntent + botones RECHAZAR/RESPONDER
+      const result = await sendFcmDataMessage({
         fcmToken: row.fcmToken,
-        title: callTitle,
-        body: callBody,
-        channelId: "llamadas",
         priority: "high",
         ttlSeconds: 30,
         data: callData,
