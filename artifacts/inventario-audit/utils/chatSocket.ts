@@ -6,7 +6,7 @@ const API_BASE =
 
 const WS_URL = API_BASE.replace(/^https?:\/\//, (m) =>
   m.startsWith("https") ? "wss://" : "ws://"
-) + "/ws";
+) + "/api/ws";
 
 let socket: WebSocket | null = null;
 let codigoActual: string | null = null;
