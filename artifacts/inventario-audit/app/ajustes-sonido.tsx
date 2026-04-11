@@ -67,9 +67,25 @@ const MSG_TONES: { label: string; value: MsgTone; icon: string }[] = [
 
 const PKG = "com.auditstock.inventario";
 
+function callToneToBundled(v: CallTone): string | null {
+  if (v === "ring1") return "ring1.wav";
+  if (v === "ring2") return "ring2.wav";
+  if (v === "ring3") return "ring3.wav";
+  if (v === "silent") return null;
+  return "ring1.wav";
+}
+
+function msgToneToBundled(v: MsgTone): string | null {
+  if (v === "ping")  return "ping.wav";
+  if (v === "chime") return "chime.wav";
+  if (v === "pop")   return "pop.wav";
+  if (v === "silent") return null;
+  return "ping.wav";
+}
+
 async function recreateChannel(
   channelId: "llamadas" | "mensajes",
-  soundUri: string | null
+  bundledFilename: string | null
 ) {
   try {
     await Notifications.deleteNotificationChannelAsync(channelId);
@@ -81,7 +97,7 @@ async function recreateChannel(
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 500, 250, 500],
       lightColor: "#8B5CF6",
-      sound: soundUri ?? "default",
+      sound: bundledFilename ?? "default",
       enableVibrate: true,
     });
   } else {
@@ -90,7 +106,7 @@ async function recreateChannel(
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#00D4FF",
-      sound: soundUri ?? "default",
+      sound: bundledFilename ?? "default",
       enableVibrate: true,
     });
   }
@@ -133,6 +149,7 @@ export default function AjustesSonido() {
   async function selectCallTone(v: CallTone) {
     setCallToneState(v);
     await setCallTone(v);
+    await recreateChannel("llamadas", callToneToBundled(v));
     if (v !== "silent" && v !== "custom" && v !== "system") {
       setPreviewing(v);
       await previewSound(v);
@@ -143,6 +160,7 @@ export default function AjustesSonido() {
   async function selectMsgTone(v: MsgTone) {
     setMsgToneState(v);
     await setMsgTone(v);
+    await recreateChannel("mensajes", msgToneToBundled(v));
     if (v !== "silent" && v !== "custom" && v !== "system") {
       setPreviewing(v);
       await previewSound(v);
@@ -192,13 +210,13 @@ export default function AjustesSonido() {
         await setCallTone("system");
         setSystemCallName(name);
         setCallToneState("system");
-        await recreateChannel("llamadas", uri);
+        await recreateChannel("llamadas", "ring1.wav");
       } else {
         await setSystemMsg(uri, name);
         await setMsgTone("system");
         setSystemMsgName(name);
         setMsgToneState("system");
-        await recreateChannel("mensajes", uri);
+        await recreateChannel("mensajes", "ping.wav");
       }
     } catch {
       // Usuario canceló o dispositivo no soporta el intent
@@ -227,6 +245,7 @@ export default function AjustesSonido() {
       await setCallTone("custom");
       setCustomCallName(name);
       setCallToneState("custom");
+      await recreateChannel("llamadas", "ring1.wav");
       setPreviewing("custom_call");
       await previewSound("custom", uri);
       setTimeout(() => setPreviewing(null), 4000);
@@ -252,6 +271,7 @@ export default function AjustesSonido() {
       await setMsgTone("custom");
       setCustomMsgName(name);
       setMsgToneState("custom");
+      await recreateChannel("mensajes", "ping.wav");
       setPreviewing("custom_msg");
       await previewSound("custom", uri);
       setTimeout(() => setPreviewing(null), 4000);
@@ -554,7 +574,7 @@ export default function AjustesSonido() {
             <View style={[s.tipBox, { marginTop: 12 }]}>
               <Feather name="info" size={14} color={PRIMARY} style={{ marginTop: 1 }} />
               <Text style={s.tipText}>
-                El tono del sistema se usa cuando la app está <Text style={{ fontWeight: "700" }}>abierta</Text>. Para cambiar el sonido de las notificaciones push (app cerrada), usá los botones de canal de arriba.
+                Los tonos seleccionados arriba se usan cuando la app está <Text style={{ fontWeight: "700" }}>abierta</Text>. Para llamadas con la app cerrada, el canal usa el tono bundleado de la app (ring1/ping). Podés personalizarlo desde <Text style={{ fontWeight: "700" }}>Canal: Llamadas</Text> en ajustes del sistema.
               </Text>
             </View>
           </>
