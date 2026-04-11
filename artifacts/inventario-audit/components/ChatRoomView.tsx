@@ -231,7 +231,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
 
   useEffect(() => {
     fetchMsgs(true);
-    marcarMensajesLeidos(yo, con).catch(() => {});
+    if (yo && con) marcarMensajesLeidos(yo, con).catch(() => {});
     const interval = setInterval(() => fetchMsgs(false), POLL);
     // Actualización instantánea cuando llega un mensaje nuevo via WebSocket
     const sub = DeviceEventEmitter.addListener("chatNewMessage", () => fetchMsgs(false));
