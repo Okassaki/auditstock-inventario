@@ -1,66 +1,62 @@
 import Constants from "expo-constants";
-import * as Linking from "expo-linking";
-import { Alert, Platform } from "react-native";
+import { Platform } from "react-native";
+import type { UpdateInfo } from "@/components/UpdateModal";
 
-const REPO = "Okassaki/auditstock-inventario";
+const REPO         = "Okassaki/auditstock-inventario";
 const RELEASES_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
-const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
+
+let onUpdateFound: ((info: UpdateInfo) => void) | null = null;
+
+export function registerUpdateCallback(fn: (info: UpdateInfo) => void) {
+  onUpdateFound = fn;
+}
 
 function currentVersionCode(): number {
-  const code =
+  return (
     (Constants.expoConfig?.android?.versionCode as number | undefined) ??
     (Constants.manifest2?.extra?.expoClient?.android?.versionCode as number | undefined) ??
-    0;
-  return code;
+    0
+  );
 }
 
 function parseVersionCode(tag: string): number {
-  const match = tag.replace(/^v/, "").match(/\d+/);
-  return match ? parseInt(match[0], 10) : 0;
+  const m = tag.replace(/^v/, "").match(/\d+/);
+  return m ? parseInt(m[0], 10) : 0;
 }
 
-export async function checkForUpdate(options?: { silent?: boolean }): Promise<void> {
+export async function checkForUpdate(_options?: { silent?: boolean }): Promise<void> {
   if (Platform.OS !== "android") return;
   const current = currentVersionCode();
   if (current === 0) return;
 
   try {
     const resp = await fetch(RELEASES_URL, {
-      headers: { "Accept": "application/vnd.github+json" },
+      headers: { Accept: "application/vnd.github+json" },
       signal: AbortSignal.timeout(8000),
     });
     if (!resp.ok) return;
 
-    const data = await resp.json() as {
+    const data = await (resp.json() as Promise<{
       tag_name: string;
       name: string;
-      html_url: string;
       assets: Array<{ browser_download_url: string; name: string }>;
-    };
+    }>);
 
     const latest = parseVersionCode(data.tag_name);
-    if (latest <= current) {
-      if (!options?.silent) {
-        Alert.alert("Sin actualizaciones", "Tenés la versión más reciente instalada.");
-      }
-      return;
-    }
+    if (latest <= current) return;
 
     const apkAsset = data.assets.find((a) => a.name.endsWith(".apk"));
-    const downloadUrl = apkAsset?.browser_download_url ?? RELEASES_PAGE;
+    if (!apkAsset) return;
 
-    Alert.alert(
-      "🆕 Actualización disponible",
-      `Versión ${data.name || data.tag_name} está lista.\n\nTu versión actual: ${current}\nNueva versión: ${latest}`,
-      [
-        { text: "Después", style: "cancel" },
-        {
-          text: "Descargar",
-          onPress: () => Linking.openURL(downloadUrl).catch(() => Linking.openURL(RELEASES_PAGE)),
-        },
-      ]
-    );
+    onUpdateFound?.({
+      versionCode: latest,
+      currentCode: current,
+      name: data.name || data.tag_name,
+      downloadUrl: apkAsset.browser_download_url,
+    });
   } catch {
-    // Si no hay internet o falla la API, no mostrar error
+    // Sin internet o falla el API — silencioso
   }
 }
+
+export type { UpdateInfo };
