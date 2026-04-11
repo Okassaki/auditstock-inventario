@@ -44,7 +44,7 @@ async function notifyCallPush(offer: CallOffer) {
       : "Toca para responder";
     const callData: Record<string, string> = {
       type: "call_offer",
-      from: offer.from,
+      caller: offer.from,
       fromName: offer.fromName,
       callType: offer.callType,
       roomId: offer.roomId,
