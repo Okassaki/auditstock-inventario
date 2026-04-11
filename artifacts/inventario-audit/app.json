@@ -24,7 +24,7 @@
     "android": {
       "package": "com.auditstock.inventario",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 34,
+      "versionCode": 35,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
@@ -43,7 +43,8 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.CHANGE_NETWORK_STATE",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-        "android.permission.REQUEST_INSTALL_PACKAGES"
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.USE_FULL_SCREEN_INTENT"
       ]
     },
     "web": {
@@ -95,7 +96,8 @@
         {
           "contactsPermission": "La app necesita acceso a tus contactos para enviarlos en el chat."
         }
-      ]
+      ],
+      "./plugins/withCallFullScreenIntent"
     ],
     "experiments": {
       "typedRoutes": true
