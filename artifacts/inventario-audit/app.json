@@ -24,7 +24,7 @@
     "android": {
       "package": "com.auditstock.inventario",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 31,
+      "versionCode": 32,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
@@ -79,7 +79,15 @@
         {
           "color": "#00D4FF",
           "androidMode": "default",
-          "androidCollapsedTitle": "AuditStock"
+          "androidCollapsedTitle": "AuditStock",
+          "sounds": [
+            "./assets/sounds/ring1.wav",
+            "./assets/sounds/ring2.wav",
+            "./assets/sounds/ring3.wav",
+            "./assets/sounds/ping.wav",
+            "./assets/sounds/chime.wav",
+            "./assets/sounds/pop.wav"
+          ]
         }
       ],
       [
