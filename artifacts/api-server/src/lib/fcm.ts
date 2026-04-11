@@ -27,6 +27,34 @@ export function fcmReady() {
   return initialized;
 }
 
+export async function sendFcmDataMessage(options: {
+  fcmToken: string;
+  data: Record<string, string>;
+  priority?: "high" | "normal";
+  ttlSeconds?: number;
+}): Promise<{ success: boolean; error?: string }> {
+  if (!initialized) {
+    return { success: false, error: "Firebase no inicializado" };
+  }
+  try {
+    const msg: admin.messaging.Message = {
+      token: options.fcmToken,
+      data: options.data,
+      android: {
+        priority: options.priority === "high" ? "high" : "normal",
+        ttl: (options.ttlSeconds ?? 30) * 1000,
+      },
+    };
+    const response = await admin.messaging().send(msg);
+    console.log("[fcm-data] Enviado OK:", response);
+    return { success: true };
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    console.error("[fcm-data] Error:", err?.code, err?.message);
+    return { success: false, error: err?.message ?? String(e) };
+  }
+}
+
 export async function sendFcmNotification(options: {
   fcmToken: string;
   title: string;
