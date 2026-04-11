@@ -17,7 +17,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ server, path: "/api/ws" });
 setupSignaling(wss, logger);
 
 server.listen(port, (err?: Error) => {
