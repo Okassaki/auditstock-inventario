@@ -28,7 +28,7 @@ router.post("/upload", upload.single("archivo"), (req, res) => {
     const host = req.get("host") ?? "";
     const protocol = req.headers["x-forwarded-proto"] ?? req.protocol;
     const baseUrl = `${protocol}://${host}`;
-    res.json({ url: `${baseUrl}/uploads/${req.file.filename}`, nombre: req.file.originalname });
+    res.json({ url: `${baseUrl}/api/uploads/${req.file.filename}`, nombre: req.file.originalname });
   } catch (err) {
     console.error("Error en upload:", err);
     res.status(500).json({ error: "Error al subir archivo" });
