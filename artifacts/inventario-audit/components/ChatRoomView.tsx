@@ -47,26 +47,35 @@ interface Theme {
   text: string;
   textSec: string;
   textMuted: string;
+  ownBubble: string;
+  otherBubble: string;
+  otherBubbleBorder: string;
 }
 
 const STORE_THEME: Theme = {
-  primary: "#00D4FF",
-  bg: "#0A0F1E",
-  surface: "#111827",
-  border: "#1F2937",
-  text: "#F0F4FF",
-  textSec: "#8B98B8",
-  textMuted: "#4A5468",
+  primary:           "#00D4FF",
+  bg:                "#0B141A",
+  surface:           "#1F2C34",
+  border:            "#2C3E46",
+  text:              "#E9EDEF",
+  textSec:           "#8696A0",
+  textMuted:         "#667781",
+  ownBubble:         "#005C4B",
+  otherBubble:       "#1E2428",
+  otherBubbleBorder: "#2C3E46",
 };
 
 const BOSS_THEME: Theme = {
-  primary: "#8B5CF6",
-  bg: "#0D0A1E",
-  surface: "#1A1530",
-  border: "#2D2550",
-  text: "#F0F4FF",
-  textSec: "#8B7FBA",
-  textMuted: "#6B5FA8",
+  primary:           "#8B5CF6",
+  bg:                "#0B0E18",
+  surface:           "#151C2C",
+  border:            "#232E42",
+  text:              "#E9EDEF",
+  textSec:           "#8696A0",
+  textMuted:         "#667781",
+  ownBubble:         "#005C4B",
+  otherBubble:       "#1A2030",
+  otherBubbleBorder: "#232E42",
 };
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -1019,10 +1028,10 @@ function makeStyles(T: Theme) {
     reenviadoTag: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2, marginLeft: 4 },
     reenviadoText: { fontSize: 11, fontFamily: "Inter_400Regular", color: T.textSec },
     bubble: { borderRadius: 18, overflow: "hidden" },
-    bubbleMio: { backgroundColor: T.primary, borderBottomRightRadius: 4 },
-    bubbleAjeno: { backgroundColor: T.surface, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: T.border },
+    bubbleMio: { backgroundColor: T.ownBubble, borderBottomRightRadius: 4 },
+    bubbleAjeno: { backgroundColor: T.otherBubble, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: T.otherBubbleBorder },
     bubbleText: { fontSize: 15, fontFamily: "Inter_400Regular", lineHeight: 21, color: T.text, paddingHorizontal: 14, paddingVertical: 10 },
-    bubbleTextMio: { color: "#fff" },
+    bubbleTextMio: { color: "#E9EDEF" },
     hora: { fontSize: 10, fontFamily: "Inter_400Regular", marginTop: 3, color: T.textMuted },
     horaMio: { marginRight: 4, textAlign: "right" },
     horaAjeno: { marginLeft: 4 },
