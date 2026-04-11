@@ -2,13 +2,16 @@ import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as IntentLauncher from "expo-intent-launcher";
+import { Audio } from "expo-av";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Linking,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -108,10 +111,18 @@ export default function AjustesSonido() {
   const [customMsgName,   setCustomMsgName]  = useState<string | null>(null);
   const [systemCallName,  setSystemCallName] = useState<string | null>(null);
   const [systemMsgName,   setSystemMsgName]  = useState<string | null>(null);
-  const [pickingCall,     setPickingCall]    = useState(false);
-  const [pickingMsg,      setPickingMsg]     = useState(false);
-  const [pickingSysCall,  setPickingSysCall] = useState(false);
-  const [pickingSysMsg,   setPickingSysMsg]  = useState(false);
+  const [pickingCall,       setPickingCall]      = useState(false);
+  const [pickingMsg,        setPickingMsg]       = useState(false);
+  const [pickingSysCall,    setPickingSysCall]   = useState(false);
+  const [pickingSysMsg,     setPickingSysMsg]    = useState(false);
+
+  // ── Selector de tonos del sistema (modal propio) ──────────────────────────
+  const [showSysPicker,    setShowSysPicker]    = useState(false);
+  const [sysPickerMode,    setSysPickerMode]    = useState<"call" | "msg">("call");
+  const [sysTones,         setSysTones]         = useState<{ name: string; uri: string }[]>([]);
+  const [sysPickerLoading, setSysPickerLoading] = useState(false);
+  const [sysPickerPreview, setSysPickerPreview] = useState<string | null>(null);
+  const sysPreviewSoundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -151,101 +162,98 @@ export default function AjustesSonido() {
     }
   }
 
-  // ── Sistema: picker nativo de Android ────────────────────────────────────
+  // ── Selector de tonos del sistema (implementación propia) ─────────────────
 
-  function readableRingtoneName(uri: string): string {
-    // content://media/internal/audio/media/123  →  try last numeric segment as fallback
-    // For display we show a generic name; the full URI is what matters for playback
-    const seg = uri.split("/").filter(Boolean).pop() ?? "";
-    // If last segment is purely numeric it's a media ID — show generic label
-    return /^\d+$/.test(seg) ? "Tono del sistema" : decodeURIComponent(seg.replace(/\.[^.]+$/, ""));
+  function nameFromPath(filePath: string): string {
+    const file = filePath.split("/").pop() ?? filePath;
+    return file.replace(/\.[^.]+$/, "");
   }
 
-  async function pickSystemCallTone() {
-    if (Platform.OS !== "android") return;
-    setPickingSysCall(true);
-    try {
-      const result = await IntentLauncher.startActivityAsync(
-        "android.intent.action.RINGTONE_PICKER",
-        {
-          extra: {
-            "android.intent.extra.RINGTONE_TYPE": 1,
-            "android.intent.extra.RINGTONE_SHOW_SILENT": true,
-            "android.intent.extra.RINGTONE_SHOW_DEFAULT": true,
-            "android.intent.extra.RINGTONE_TITLE": "Tono de llamada",
-          },
-        }
-      );
-      if (result.resultCode === -1) {
-        // Android returns the picked URI in result.data (Intent.getData())
-        // Fallback: check known extra keys (some ROMs differ)
-        const uri: string | undefined =
-          (result.data && result.data !== "null" ? result.data : undefined) ??
-          result.extra?.["android.intent.extra.ringtone.PICKED_URI"] ??
-          result.extra?.["picked_uri"] ??
-          undefined;
+  async function loadSystemTones(forType: "call" | "msg"): Promise<{ name: string; uri: string }[]> {
+    const dirs = forType === "call"
+      ? ["file:///system/media/audio/ringtones/", "file:///sdcard/Ringtones/", "file:///storage/emulated/0/Ringtones/"]
+      : ["file:///system/media/audio/notifications/", "file:///sdcard/Notifications/", "file:///storage/emulated/0/Notifications/"];
 
-        const name: string = uri ? readableRingtoneName(uri) : "Silencio";
-        const finalUri = uri ?? "silent";
-        await setSystemCall(finalUri, name);
-        await setCallTone("system");
-        setSystemCallName(name);
-        setCallToneState("system");
-        if (uri) {
-          setPreviewing("system_call");
-          await previewSound("system", uri);
-          setTimeout(() => setPreviewing(null), 4000);
+    const tones: { name: string; uri: string }[] = [{ name: "Silencio", uri: "silent" }];
+    for (const dir of dirs) {
+      try {
+        const files = await FileSystem.readDirectoryAsync(dir);
+        for (const f of files.sort()) {
+          if (/\.(mp3|ogg|wav|m4a|aac|flac|opus)$/i.test(f)) {
+            tones.push({ name: nameFromPath(f), uri: dir + f });
+          }
         }
-        await recreateChannel("llamadas", uri ?? null);
-      }
+      } catch {}
+    }
+    return tones;
+  }
+
+  async function openSysPicker(mode: "call" | "msg") {
+    if (Platform.OS !== "android") return;
+    setSysPickerMode(mode);
+    setSysPickerLoading(true);
+    setShowSysPicker(true);
+    const tones = await loadSystemTones(mode);
+    setSysTones(tones);
+    setSysPickerLoading(false);
+  }
+
+  async function closeSysPicker() {
+    if (sysPreviewSoundRef.current) {
+      await sysPreviewSoundRef.current.unloadAsync().catch(() => {});
+      sysPreviewSoundRef.current = null;
+    }
+    setSysPickerPreview(null);
+    setShowSysPicker(false);
+  }
+
+  async function previewSysTone(uri: string) {
+    if (sysPreviewSoundRef.current) {
+      await sysPreviewSoundRef.current.unloadAsync().catch(() => {});
+      sysPreviewSoundRef.current = null;
+    }
+    if (uri === "silent" || sysPickerPreview === uri) {
+      setSysPickerPreview(null);
+      return;
+    }
+    try {
+      setSysPickerPreview(uri);
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: true, volume: 1.0 }
+      );
+      sysPreviewSoundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setSysPickerPreview(null);
+          sysPreviewSoundRef.current = null;
+        }
+      });
     } catch {
-      Alert.alert("Error", "No se pudo abrir el selector de tonos del sistema.");
-    } finally {
-      setPickingSysCall(false);
+      setSysPickerPreview(null);
     }
   }
 
-  async function pickSystemMsgTone() {
-    if (Platform.OS !== "android") return;
-    setPickingSysMsg(true);
-    try {
-      const result = await IntentLauncher.startActivityAsync(
-        "android.intent.action.RINGTONE_PICKER",
-        {
-          extra: {
-            "android.intent.extra.RINGTONE_TYPE": 2,
-            "android.intent.extra.RINGTONE_SHOW_SILENT": true,
-            "android.intent.extra.RINGTONE_SHOW_DEFAULT": true,
-            "android.intent.extra.RINGTONE_TITLE": "Tono de notificación",
-          },
-        }
-      );
-      if (result.resultCode === -1) {
-        const uri: string | undefined =
-          (result.data && result.data !== "null" ? result.data : undefined) ??
-          result.extra?.["android.intent.extra.ringtone.PICKED_URI"] ??
-          result.extra?.["picked_uri"] ??
-          undefined;
-
-        const name: string = uri ? readableRingtoneName(uri) : "Silencio";
-        const finalUri = uri ?? "silent";
-        await setSystemMsg(finalUri, name);
-        await setMsgTone("system");
-        setSystemMsgName(name);
-        setMsgToneState("system");
-        if (uri) {
-          setPreviewing("system_msg");
-          await previewSound("system", uri);
-          setTimeout(() => setPreviewing(null), 3000);
-        }
-        await recreateChannel("mensajes", uri ?? null);
-      }
-    } catch {
-      Alert.alert("Error", "No se pudo abrir el selector de tonos del sistema.");
-    } finally {
-      setPickingSysMsg(false);
+  async function confirmSysTone(tone: { name: string; uri: string }) {
+    await closeSysPicker();
+    const { name, uri } = tone;
+    if (sysPickerMode === "call") {
+      await setSystemCall(uri, name);
+      await setCallTone("system");
+      setSystemCallName(name);
+      setCallToneState("system");
+      await recreateChannel("llamadas", uri === "silent" ? null : uri);
+    } else {
+      await setSystemMsg(uri, name);
+      await setMsgTone("system");
+      setSystemMsgName(name);
+      setMsgToneState("system");
+      await recreateChannel("mensajes", uri === "silent" ? null : uri);
     }
   }
+
+  function pickSystemCallTone() { openSysPicker("call"); }
+  function pickSystemMsgTone()  { openSysPicker("msg");  }
 
   // ── Archivo personalizado ─────────────────────────────────────────────────
 
@@ -598,6 +606,66 @@ export default function AjustesSonido() {
         )}
 
       </ScrollView>
+
+      {/* ── Modal selector de tonos del sistema ──────────────────────────── */}
+      <Modal
+        visible={showSysPicker}
+        animationType="slide"
+        transparent
+        onRequestClose={closeSysPicker}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>
+                {sysPickerMode === "call" ? "Tono de llamada" : "Tono de notificación"}
+              </Text>
+              <TouchableOpacity onPress={closeSysPicker} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="x" size={20} color={TEXT} />
+              </TouchableOpacity>
+            </View>
+
+            {sysPickerLoading ? (
+              <ActivityIndicator color={GREEN} style={{ marginVertical: 32 }} />
+            ) : sysTones.length <= 1 ? (
+              <View style={{ paddingVertical: 24, alignItems: "center", gap: 8 }}>
+                <Feather name="music" size={28} color={TEXT_MUTED} />
+                <Text style={s.modalEmpty}>No se encontraron tonos del sistema</Text>
+                <Text style={[s.modalEmpty, { fontSize: 11 }]}>Usá "Elegir archivo de audio" para seleccionar un tono</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={sysTones}
+                keyExtractor={(_, i) => String(i)}
+                style={{ maxHeight: 420 }}
+                showsVerticalScrollIndicator
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={s.toneRow}
+                    onPress={() => confirmSysTone(item)}
+                    activeOpacity={0.7}
+                  >
+                    <TouchableOpacity
+                      style={s.tonePlayBtn}
+                      onPress={() => previewSysTone(item.uri)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      {sysPickerPreview === item.uri
+                        ? <Feather name="volume-2" size={15} color={GREEN} />
+                        : <Feather name={item.uri === "silent" ? "volume-x" : "play"} size={15} color={item.uri === "silent" ? TEXT_MUTED : TEXT_SEC} />
+                      }
+                    </TouchableOpacity>
+                    <Text style={[s.toneLabel, item.uri === "silent" && { color: TEXT_MUTED }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Feather name="chevron-right" size={15} color={TEXT_MUTED} style={{ marginLeft: "auto" }} />
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -617,6 +685,14 @@ const s = StyleSheet.create({
   subLabel:   { fontSize: 11, color: TEXT_MUTED, marginTop: 2 },
   subHint:    { fontSize: 11, color: TEXT_MUTED, marginTop: 2, fontStyle: "italic" },
   playBtn:    { width: 30, height: 30, alignItems: "center", justifyContent: "center", marginRight: 4 },
-  tipBox:     { flexDirection: "row", gap: 8, backgroundColor: `${PRIMARY}10`, borderRadius: 10, padding: 12, marginTop: 20, borderWidth: 1, borderColor: `${PRIMARY}25` },
-  tipText:    { flex: 1, fontSize: 12, color: TEXT_SEC, lineHeight: 18 },
+  tipBox:       { flexDirection: "row", gap: 8, backgroundColor: `${PRIMARY}10`, borderRadius: 10, padding: 12, marginTop: 20, borderWidth: 1, borderColor: `${PRIMARY}25` },
+  tipText:      { flex: 1, fontSize: 12, color: TEXT_SEC, lineHeight: 18 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  modalBox:     { backgroundColor: SURFACE, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 32, maxHeight: "70%" },
+  modalHeader:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderColor: BORDER },
+  modalTitle:   { fontSize: 16, fontWeight: "700", color: TEXT },
+  modalEmpty:   { fontSize: 13, color: TEXT_MUTED, textAlign: "center" },
+  toneRow:      { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderColor: BORDER },
+  tonePlayBtn:  { width: 32, height: 32, borderRadius: 16, backgroundColor: BORDER, alignItems: "center", justifyContent: "center" },
+  toneLabel:    { flex: 1, fontSize: 14, color: TEXT },
 });
