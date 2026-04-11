@@ -5,7 +5,7 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { Audio } from "expo-av";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -78,7 +78,7 @@ interface Props {
   mode: "store" | "boss";
 }
 
-const POLL = 5000;
+const POLL = 2000;
 
 const API_BASE = API_URL;
 
@@ -411,21 +411,23 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
 
     // Reanudar si estaba pausado
     if (pausedId === msg.id && soundRef.current) {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        playThroughEarpieceAndroid: false,
-      });
-      await soundRef.current.playAsync();
-      setPlayingId(msg.id);
-      setPausedId(null);
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
+      } catch {}
+      try {
+        await soundRef.current.playAsync();
+        setPlayingId(msg.id);
+        setPausedId(null);
+      } catch {
+        Alert.alert("Error de audio", "No se pudo reanudar la nota de voz.");
+      }
       return;
     }
 
     // Detener cualquier audio previo
     if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
+      try { await soundRef.current.stopAsync(); } catch {}
+      try { await soundRef.current.unloadAsync(); } catch {}
       soundRef.current = null;
     }
     setPlayingId(msg.id);
@@ -433,29 +435,33 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
     setPlayPos((p) => ({ ...p, [msg.id]: 0 }));
 
     try {
-      // Forzar altavoz: Android enruta al auricular después de grabar
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        playThroughEarpieceAndroid: false,
-      });
+      // Intentar forzar altavoz — ignorar si falla (algunos Android lo rechazan)
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
+      } catch {}
 
+      let lastProgUpdate = 0;
       const { sound } = await Audio.Sound.createAsync(
         { uri: msg.adjuntoUrl },
         { shouldPlay: false, volume: 1.0, rate: playSpeed, shouldCorrectPitch: true },
         (status) => {
           if (!status.isLoaded) return;
-          const prog = status.durationMillis
-            ? status.positionMillis / status.durationMillis
-            : 0;
-          setPlayPos((p) => ({ ...p, [msg.id]: prog }));
           if (status.didJustFinish) {
             setPlayingId(null);
             setPausedId(null);
             setPlayPos((p) => ({ ...p, [msg.id]: 0 }));
             sound.unloadAsync().catch(() => {});
             soundRef.current = null;
+            return;
           }
+          // Throttle: actualizar progreso máximo cada 100ms para no saturar renders
+          const now = Date.now();
+          if (now - lastProgUpdate < 100) return;
+          lastProgUpdate = now;
+          const prog = status.durationMillis
+            ? status.positionMillis / status.durationMillis
+            : 0;
+          setPlayPos((p) => ({ ...p, [msg.id]: prog }));
         }
       );
       soundRef.current = sound;
@@ -598,53 +604,53 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
           if (seleccionando) toggleSeleccion(msg.id);
         }}
         style={[
-          makeStyles(T).bubbleWrap,
-          esMio ? makeStyles(T).mioWrap : makeStyles(T).ajenoWrap,
+          s.bubbleWrap,
+          esMio ? s.mioWrap : s.ajenoWrap,
           seleccionado && { opacity: 0.75 },
           seleccionando && seleccionado && { backgroundColor: T.primary + "18", borderRadius: 12 },
         ]}
       >
         {seleccionando && (
-          <View style={[makeStyles(T).checkbox, seleccionado && { backgroundColor: T.primary, borderColor: T.primary }]}>
+          <View style={[s.checkbox, seleccionado && { backgroundColor: T.primary, borderColor: T.primary }]}>
             {seleccionado && <Feather name="check" size={10} color="#fff" />}
           </View>
         )}
 
-        <View style={makeStyles(T).bubbleContent}>
+        <View style={s.bubbleContent}>
           {!esMio && con === "GENERAL" && (
-            <Text style={[makeStyles(T).senderName, { color: T.primary }]}>{msg.deTienda}</Text>
+            <Text style={[s.senderName, { color: T.primary }]}>{msg.deTienda}</Text>
           )}
           {msg.eliminadoTodos ? (
-            <View style={[makeStyles(T).bubble, esMio ? makeStyles(T).bubbleMio : makeStyles(T).bubbleAjeno, { flexDirection: "row", alignItems: "center", gap: 6, opacity: 0.6 }]}>
+            <View style={[s.bubble, esMio ? s.bubbleMio : s.bubbleAjeno, { flexDirection: "row", alignItems: "center", gap: 6, opacity: 0.6 }]}>
               <Feather name="slash" size={13} color={esMio ? "rgba(255,255,255,0.6)" : T.textSec} />
-              <Text style={[makeStyles(T).bubbleText, esMio && makeStyles(T).bubbleTextMio, { fontStyle: "italic" }]}>
+              <Text style={[s.bubbleText, esMio && s.bubbleTextMio, { fontStyle: "italic" }]}>
                 Mensaje eliminado
               </Text>
             </View>
           ) : (
             <>
               {msg.reenviado && (
-                <View style={makeStyles(T).reenviadoTag}>
+                <View style={s.reenviadoTag}>
                   <Feather name="corner-up-right" size={11} color={T.textSec} />
-                  <Text style={makeStyles(T).reenviadoText}>Reenviado</Text>
+                  <Text style={s.reenviadoText}>Reenviado</Text>
                 </View>
               )}
-              <View style={[makeStyles(T).bubble, esMio ? makeStyles(T).bubbleMio : makeStyles(T).bubbleAjeno]}>
+              <View style={[s.bubble, esMio ? s.bubbleMio : s.bubbleAjeno]}>
                 {msg.adjuntoTipo === "imagen" && msg.adjuntoUrl && (
-                  <Image source={{ uri: msg.adjuntoUrl }} style={makeStyles(T).adjuntoImg} contentFit="cover" />
+                  <Image source={{ uri: msg.adjuntoUrl }} style={s.adjuntoImg} contentFit="cover" />
                 )}
                 {msg.adjuntoTipo === "documento" && (
-                  <View style={makeStyles(T).adjuntoDoc}>
+                  <View style={s.adjuntoDoc}>
                     <Feather name="file-text" size={22} color={esMio ? "rgba(255,255,255,0.8)" : T.primary} />
-                    <Text style={[makeStyles(T).adjuntoDocNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
+                    <Text style={[s.adjuntoDocNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
                       {msg.adjuntoNombre ?? "Documento"}
                     </Text>
                   </View>
                 )}
                 {msg.adjuntoTipo === "contacto" && (
-                  <View style={makeStyles(T).adjuntoContacto}>
+                  <View style={s.adjuntoContacto}>
                     <Feather name="user" size={20} color={esMio ? "rgba(255,255,255,0.9)" : T.primary} />
-                    <Text style={[makeStyles(T).adjuntoContactoNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
+                    <Text style={[s.adjuntoContactoNombre, esMio && { color: "rgba(255,255,255,0.9)" }]} numberOfLines={2}>
                       {msg.adjuntoNombre ?? "Contacto"}
                     </Text>
                   </View>
@@ -661,10 +667,9 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                   const btnBg       = esMio ? "rgba(255,255,255,0.22)" : T.primary;
                   const btnIconColor = esMio ? T.primary : "#fff";
                   return (
-                    <View style={makeStyles(T).audioBubble}>
-                      {/* Botón play/pause circular */}
+                    <View style={s.audioBubble}>
                       <TouchableOpacity
-                        style={[makeStyles(T).audioPlayCircle, { backgroundColor: btnBg }]}
+                        style={[s.audioPlayCircle, { backgroundColor: btnBg }]}
                         onPress={() => togglePlay(msg)}
                         activeOpacity={0.75}
                       >
@@ -676,21 +681,19 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                         />
                       </TouchableOpacity>
 
-                      {/* Área central: forma de onda + timer */}
                       <TouchableOpacity
                         style={{ flex: 1 }}
                         onPress={() => togglePlay(msg)}
                         activeOpacity={0.85}
                       >
-                        {/* Forma de onda */}
-                        <View style={makeStyles(T).audioWaveform}>
+                        <View style={s.audioWaveform}>
                           {bars.map((h, i) => {
                             const filled = i / bars.length < prog;
                             return (
                               <View
                                 key={i}
                                 style={[
-                                  makeStyles(T).audioWaveBar,
+                                  s.audioWaveBar,
                                   { height: h },
                                   { backgroundColor: filled ? accentColor : mutedColor },
                                 ]}
@@ -698,19 +701,17 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                             );
                           })}
                         </View>
-                        {/* Timer */}
-                        <Text style={[makeStyles(T).audioDur, esMio && { color: "rgba(255,255,255,0.65)" }]}>
+                        <Text style={[s.audioDur, esMio && { color: "rgba(255,255,255,0.65)" }]}>
                           {(playing || paused) ? formatSegs(elapsed) : formatSegs(durSecs)}
                         </Text>
                       </TouchableOpacity>
 
-                      {/* Velocidad de reproducción */}
                       <TouchableOpacity
-                        style={makeStyles(T).audioSpeedBtn}
+                        style={s.audioSpeedBtn}
                         onPress={cycleSpeed}
                         activeOpacity={0.7}
                       >
-                        <Text style={[makeStyles(T).audioSpeedText, esMio && { color: "rgba(255,255,255,0.70)" }]}>
+                        <Text style={[s.audioSpeedText, esMio && { color: "rgba(255,255,255,0.70)" }]}>
                           {playSpeed === 1 ? "1×" : playSpeed === 1.5 ? "1.5×" : "2×"}
                         </Text>
                       </TouchableOpacity>
@@ -718,12 +719,12 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
                   );
                 })()}
                 {!!msg.texto && (
-                  <Text style={[makeStyles(T).bubbleText, esMio && makeStyles(T).bubbleTextMio]}>{msg.texto}</Text>
+                  <Text style={[s.bubbleText, esMio && s.bubbleTextMio]}>{msg.texto}</Text>
                 )}
               </View>
             </>
           )}
-          <Text style={[makeStyles(T).hora, esMio ? makeStyles(T).horaMio : makeStyles(T).horaAjeno]}>
+          <Text style={[s.hora, esMio ? s.horaMio : s.horaAjeno]}>
             {formatHora(msg.creadoAt)}
           </Text>
         </View>
@@ -733,9 +734,11 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
 
   // ── Render ──────────────────────────────────────────────────────────────
 
-  const msgsVisibles = msgs.filter((m) => !(m.eliminadosPara ?? []).includes(yo));
-  const listData = buildList(msgsVisibles);
-  const s = makeStyles(T);
+  const s = useMemo(() => makeStyles(T), [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  const listData = useMemo(() => {
+    const visibles = msgs.filter((m) => !(m.eliminadosPara ?? []).includes(yo));
+    return buildList(visibles);
+  }, [msgs, yo]);
 
   const attachTranslateY = attachAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] });
   const attachOpacity = attachAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
@@ -830,6 +833,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
             ref={flatRef}
             data={listData}
             keyExtractor={(item, i) => item.type === "fecha" ? `f-${i}` : `m-${item.msg.id}`}
+            extraData={[playingId, pausedId, playPos, seleccionando, seleccionados, playSpeed]}
             renderItem={({ item }) => {
               if (item.type === "fecha") {
                 return (
@@ -843,6 +847,10 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
               return renderBubble(item.msg);
             }}
             contentContainerStyle={[s.list, { paddingBottom: 8 }]}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={30}
+            windowSize={10}
             ListEmptyComponent={
               <View style={s.empty}>
                 <Feather name="message-circle" size={36} color={T.textMuted} />
