@@ -1,4 +1,5 @@
 import * as Device from "expo-device";
+import * as FileSystem from "expo-file-system";
 import * as Notifications from "expo-notifications";
 import { Linking, Platform } from "react-native";
 import { API_URL } from "./api";
@@ -27,6 +28,16 @@ export async function registerForPushNotificationsAsync(
   }
 
   if (Platform.OS === "android") {
+    // Guardar URL de la API para que el receptor nativo (CallRejectReceiver) pueda usarla
+    try {
+      if (FileSystem.documentDirectory) {
+        await FileSystem.writeAsStringAsync(
+          FileSystem.documentDirectory + "native_config.json",
+          JSON.stringify({ apiUrl: API_URL }),
+        );
+      }
+    } catch {}
+
     await Notifications.deleteNotificationChannelAsync("mensajes").catch(() => {});
     await Notifications.deleteNotificationChannelAsync("llamadas").catch(() => {});
     await Notifications.setNotificationChannelAsync("mensajes", {
@@ -44,6 +55,8 @@ export async function registerForPushNotificationsAsync(
       lightColor: "#8B5CF6",
       sound: "ring1.wav",
       enableVibrate: true,
+      // Usar el volumen de "Tono de llamada" en lugar del volumen de notificaciones
+      audioAttributesUsage: 6 as any, // AudioAttributes.USAGE_NOTIFICATION_RINGTONE
     });
   }
 
