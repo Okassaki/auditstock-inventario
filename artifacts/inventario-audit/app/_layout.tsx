@@ -26,6 +26,7 @@ import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
 import { registerForPushNotificationsAsync, openNotificationSettings } from "@/utils/notifications";
 import { saveCodigoForBackground, registerBackgroundMessages } from "@/utils/backgroundMessages";
 import { checkForUpdate } from "@/utils/updateChecker";
+import { connectChatSocket, disconnectChatSocket } from "@/utils/chatSocket";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -64,6 +65,20 @@ function RootLayoutNav() {
     const interval = setInterval(() => checkForUpdate({ silent: true }), 10 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [storeLoading, bossLoading]);
+
+  // Conectar WebSocket para mensajes en tiempo real
+  useEffect(() => {
+    if (storeLoading || bossLoading) return;
+    let codigo: string | null = null;
+    if (bossAuthenticated) codigo = "JEFE";
+    else if (storeConfig) codigo = storeConfig.codigo;
+    if (codigo) {
+      connectChatSocket(codigo);
+    } else {
+      disconnectChatSocket();
+    }
+    return () => { disconnectChatSocket(); };
+  }, [storeConfig, bossAuthenticated, storeLoading, bossLoading]);
 
   // Registrar push token cuando la tienda o el jefe están listos
   useEffect(() => {
