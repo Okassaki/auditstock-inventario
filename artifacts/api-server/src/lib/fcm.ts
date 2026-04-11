@@ -52,7 +52,6 @@ export async function sendFcmNotification(options: {
         ttl: (options.ttlSeconds ?? 86400) * 1000,
         notification: {
           channelId: options.channelId ?? "mensajes",
-          sound: "default",
         },
       },
     };
