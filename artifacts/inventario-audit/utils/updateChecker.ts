@@ -12,11 +12,18 @@ export function registerUpdateCallback(fn: (info: UpdateInfo) => void) {
 }
 
 function currentVersionCode(): number {
-  return (
-    (Constants.expoConfig?.android?.versionCode as number | undefined) ??
-    (Constants.manifest2?.extra?.expoClient?.android?.versionCode as number | undefined) ??
-    0
-  );
+  const fromConfig = Constants.expoConfig?.android?.versionCode as number | undefined;
+  if (typeof fromConfig === "number" && fromConfig > 0) return fromConfig;
+
+  const fromManifest2 = Constants.manifest2?.extra?.expoClient?.android?.versionCode as number | undefined;
+  if (typeof fromManifest2 === "number" && fromManifest2 > 0) return fromManifest2;
+
+  const fromManifest = (Constants as unknown as Record<string, unknown>)?.manifest as Record<string, unknown> | undefined;
+  const fromManifestCode = fromManifest?.android as Record<string, unknown> | undefined;
+  const legacyCode = fromManifestCode?.versionCode as number | undefined;
+  if (typeof legacyCode === "number" && legacyCode > 0) return legacyCode;
+
+  return 0;
 }
 
 function parseVersionCode(tag: string): number {
