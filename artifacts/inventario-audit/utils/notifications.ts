@@ -27,12 +27,14 @@ export async function registerForPushNotificationsAsync(
   }
 
   if (Platform.OS === "android") {
+    await Notifications.deleteNotificationChannelAsync("mensajes").catch(() => {});
+    await Notifications.deleteNotificationChannelAsync("llamadas").catch(() => {});
     await Notifications.setNotificationChannelAsync("mensajes", {
       name: "Mensajes",
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#00D4FF",
-      sound: "default",
+      sound: "ping.wav",
       enableVibrate: true,
     });
     await Notifications.setNotificationChannelAsync("llamadas", {
@@ -40,7 +42,7 @@ export async function registerForPushNotificationsAsync(
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 500, 250, 500],
       lightColor: "#8B5CF6",
-      sound: "default",
+      sound: "ring1.wav",
       enableVibrate: true,
     });
   }
