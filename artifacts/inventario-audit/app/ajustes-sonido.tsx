@@ -189,9 +189,14 @@ export default function AjustesSonido() {
       );
 
       // RESULT_OK en Android = -1
-      if (result.resultCode !== -1 || !result.data) return;
+      if (result.resultCode !== -1) return;
 
-      const uri = result.data as string;
+      // El picker devuelve la URI en los extras, no en result.data
+      const uri: string =
+        (result.extra?.["android.intent.extra.ringtone.PICKED_URI"] as string | undefined) ??
+        (result.data as string | undefined) ??
+        "";
+      if (!uri) return;
 
       // Intentar extraer nombre legible del URI o usar genérico
       let name = mode === "call" ? "Tono de llamada" : "Tono de notificación";
