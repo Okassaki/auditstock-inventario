@@ -153,6 +153,14 @@ export default function AjustesSonido() {
 
   // ── Sistema: picker nativo de Android ────────────────────────────────────
 
+  function readableRingtoneName(uri: string): string {
+    // content://media/internal/audio/media/123  →  try last numeric segment as fallback
+    // For display we show a generic name; the full URI is what matters for playback
+    const seg = uri.split("/").filter(Boolean).pop() ?? "";
+    // If last segment is purely numeric it's a media ID — show generic label
+    return /^\d+$/.test(seg) ? "Tono del sistema" : decodeURIComponent(seg.replace(/\.[^.]+$/, ""));
+  }
+
   async function pickSystemCallTone() {
     if (Platform.OS !== "android") return;
     setPickingSysCall(true);
@@ -161,7 +169,7 @@ export default function AjustesSonido() {
         "android.intent.action.RINGTONE_PICKER",
         {
           extra: {
-            "android.intent.extra.RINGTONE_TYPE": 1,        // TYPE_RINGTONE
+            "android.intent.extra.RINGTONE_TYPE": 1,
             "android.intent.extra.RINGTONE_SHOW_SILENT": true,
             "android.intent.extra.RINGTONE_SHOW_DEFAULT": true,
             "android.intent.extra.RINGTONE_TITLE": "Tono de llamada",
@@ -169,10 +177,15 @@ export default function AjustesSonido() {
         }
       );
       if (result.resultCode === -1) {
-        const uri: string | undefined = result.extra?.["android.intent.extra.RINGTONE_URI"];
-        const name: string = uri
-          ? (uri.split("/").pop() ?? "Tono del sistema")
-          : "Silencio";
+        // Android returns the picked URI in result.data (Intent.getData())
+        // Fallback: check known extra keys (some ROMs differ)
+        const uri: string | undefined =
+          (result.data && result.data !== "null" ? result.data : undefined) ??
+          result.extra?.["android.intent.extra.ringtone.PICKED_URI"] ??
+          result.extra?.["picked_uri"] ??
+          undefined;
+
+        const name: string = uri ? readableRingtoneName(uri) : "Silencio";
         const finalUri = uri ?? "silent";
         await setSystemCall(finalUri, name);
         await setCallTone("system");
@@ -185,7 +198,7 @@ export default function AjustesSonido() {
         }
         await recreateChannel("llamadas", uri ?? null);
       }
-    } catch (e) {
+    } catch {
       Alert.alert("Error", "No se pudo abrir el selector de tonos del sistema.");
     } finally {
       setPickingSysCall(false);
@@ -200,7 +213,7 @@ export default function AjustesSonido() {
         "android.intent.action.RINGTONE_PICKER",
         {
           extra: {
-            "android.intent.extra.RINGTONE_TYPE": 2,        // TYPE_NOTIFICATION
+            "android.intent.extra.RINGTONE_TYPE": 2,
             "android.intent.extra.RINGTONE_SHOW_SILENT": true,
             "android.intent.extra.RINGTONE_SHOW_DEFAULT": true,
             "android.intent.extra.RINGTONE_TITLE": "Tono de notificación",
@@ -208,10 +221,13 @@ export default function AjustesSonido() {
         }
       );
       if (result.resultCode === -1) {
-        const uri: string | undefined = result.extra?.["android.intent.extra.RINGTONE_URI"];
-        const name: string = uri
-          ? (uri.split("/").pop() ?? "Tono del sistema")
-          : "Silencio";
+        const uri: string | undefined =
+          (result.data && result.data !== "null" ? result.data : undefined) ??
+          result.extra?.["android.intent.extra.ringtone.PICKED_URI"] ??
+          result.extra?.["picked_uri"] ??
+          undefined;
+
+        const name: string = uri ? readableRingtoneName(uri) : "Silencio";
         const finalUri = uri ?? "silent";
         await setSystemMsg(finalUri, name);
         await setMsgTone("system");
@@ -224,7 +240,7 @@ export default function AjustesSonido() {
         }
         await recreateChannel("mensajes", uri ?? null);
       }
-    } catch (e) {
+    } catch {
       Alert.alert("Error", "No se pudo abrir el selector de tonos del sistema.");
     } finally {
       setPickingSysMsg(false);
