@@ -11,7 +11,7 @@ import * as Notifications from "expo-notifications";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -25,8 +25,9 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
 import { registerForPushNotificationsAsync, openNotificationSettings } from "@/utils/notifications";
 import { saveCodigoForBackground, registerBackgroundMessages } from "@/utils/backgroundMessages";
-import { checkForUpdate } from "@/utils/updateChecker";
+import { checkForUpdate, registerUpdateCallback } from "@/utils/updateChecker";
 import { connectChatSocket, disconnectChatSocket } from "@/utils/chatSocket";
+import { UpdateModal, type UpdateInfo } from "@/components/UpdateModal";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -57,6 +58,12 @@ function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
   const notifListenerRef = useRef<Notifications.Subscription | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+
+  // Registrar callback del modal de actualizaciones
+  useEffect(() => {
+    registerUpdateCallback(setUpdateInfo);
+  }, []);
 
   // Verificar actualizaciones al abrir la app y cada 10 minutos
   useEffect(() => {
@@ -178,14 +185,17 @@ function RootLayoutNav() {
   }, [storeConfig, storeLoading, bossAuthenticated, bossLoading, segments]);
 
   return (
-    <Stack screenOptions={{ headerBackTitle: "Atrás" }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="setup" options={{ headerShown: false }} />
-      <Stack.Screen name="boss-login" options={{ headerShown: false }} />
-      <Stack.Screen name="boss" options={{ headerShown: false }} />
-      <Stack.Screen name="chat-room" options={{ headerShown: false }} />
-      <Stack.Screen name="ajustes-sonido" options={{ headerShown: false }} />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerBackTitle: "Atrás" }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="setup" options={{ headerShown: false }} />
+        <Stack.Screen name="boss-login" options={{ headerShown: false }} />
+        <Stack.Screen name="boss" options={{ headerShown: false }} />
+        <Stack.Screen name="chat-room" options={{ headerShown: false }} />
+        <Stack.Screen name="ajustes-sonido" options={{ headerShown: false }} />
+      </Stack>
+      <UpdateModal info={updateInfo} onDismiss={() => setUpdateInfo(null)} />
+    </>
   );
 }
 
