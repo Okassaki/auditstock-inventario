@@ -16,8 +16,10 @@ function withCallFullScreenIntent(config) {
   config = withDangerousMod(config, [
     "android",
     (cfg) => {
+      // __dirname = artifacts/inventario-audit/plugins/
+      // Android source lives one level up under android/
       const pkgDir = path.join(
-        cfg.modResults.projectRoot,
+        __dirname, "..",
         "android", "app", "src", "main", "java",
         "com", "auditstock", "inventario"
       );
