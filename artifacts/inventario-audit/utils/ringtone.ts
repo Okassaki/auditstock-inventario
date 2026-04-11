@@ -96,12 +96,16 @@ export async function setSystemMsg(uri: string, name: string): Promise<void> {
  * across app restarts (content:// URIs on Android are temporary).
  * Returns the permanent local URI.
  */
+// expo-file-system@19 moved documentDirectory to the legacy namespace but it
+// still exists at runtime — the type definition is just missing it.
+const fsDocDir: string | null = (FileSystem as unknown as { documentDirectory: string | null }).documentDirectory;
+
 export async function persistAudioFile(
   sourceUri: string,
   filename: string,
   slot: "call" | "msg"
 ): Promise<string> {
-  const dest = `${FileSystem.documentDirectory}custom_${slot}_${filename}`;
+  const dest = `${fsDocDir}custom_${slot}_${filename}`;
   const info = await FileSystem.getInfoAsync(dest);
   if (!info.exists) {
     await FileSystem.copyAsync({ from: sourceUri, to: dest });
