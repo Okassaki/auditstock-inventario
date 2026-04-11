@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -50,8 +50,9 @@ export default function BossMensajesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchAll = useCallback(async (manual = false) => {
+  const fetchAll = useCallback(async (manual = false, attempt = 0) => {
     if (manual) setRefreshing(true);
     try {
       const [ts, cs] = await Promise.all([
@@ -61,8 +62,12 @@ export default function BossMensajesScreen() {
       setTiendas(ts);
       setConversaciones(cs);
       setError(null);
-    } catch (e: any) {
-      setError(e?.message ?? "Error de conexión");
+    } catch {
+      if (attempt === 0 && !manual) {
+        retryRef.current = setTimeout(() => fetchAll(false, 1), 3000);
+      } else {
+        setError("Sin conexión al servidor");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -72,11 +77,11 @@ export default function BossMensajesScreen() {
   useEffect(() => {
     fetchAll();
     const interval = setInterval(() => fetchAll(), POLL);
-    // Actualización instantánea via WebSocket
     const sub = DeviceEventEmitter.addListener("chatNewMessage", () => fetchAll());
     return () => {
       clearInterval(interval);
       sub.remove();
+      if (retryRef.current) clearTimeout(retryRef.current);
     };
   }, [fetchAll]);
 
