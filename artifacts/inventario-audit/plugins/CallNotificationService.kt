@@ -11,42 +11,42 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
+import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import expo.modules.notifications.service.ExpoFirebaseMessagingService
 
-class CallNotificationService : ExpoFirebaseMessagingService() {
+class CallNotificationService : FirebaseMessagingService() {
 
     companion object {
-        const val NOTIF_ID = 9001
-        const val CHANNEL_ID = "llamadas"
+        const val NOTIF_ID    = 9001
+        const val CHANNEL_ID  = "llamadas"
         const val ACTION_REJECT = "com.auditstock.inventario.REJECT_CALL"
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
-        val type = remoteMessage.data["type"]
-        if (type == "call_offer") {
-            showFullScreenCallNotification(remoteMessage)
-        } else {
-            super.onMessageReceived(remoteMessage)
+        if (remoteMessage.data["type"] == "call_offer") {
+            showFullScreenCallNotification(remoteMessage.data)
         }
+        // Mensajes con payload notification son mostrados directamente por el sistema Android
     }
 
-    private fun showFullScreenCallNotification(message: RemoteMessage) {
-        val data     = message.data
-        val caller   = data["caller"]   ?: data["fromName"] ?: "Alguien"
-        val fromName = data["fromName"] ?: caller
-        val callType = data["callType"] ?: "audio"
-        val offerId  = data["offerId"]  ?: ""
-        val roomId   = data["roomId"]   ?: ""
+    override fun onNewToken(token: String) {
+        super.onNewToken(token)
+        // La app actualiza el token en el próximo inicio — no se requiere acción aquí
+    }
+
+    private fun showFullScreenCallNotification(msgData: Map<String, String>) {
+        val caller   = msgData["caller"]   ?: msgData["fromName"] ?: "Alguien"
+        val fromName = msgData["fromName"] ?: caller
+        val callType = msgData["callType"] ?: "audio"
+        val offerId  = msgData["offerId"]  ?: ""
+        val roomId   = msgData["roomId"]   ?: ""
+        val isVideo  = callType == "video"
 
         val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val existing = notifManager.getNotificationChannel(CHANNEL_ID)
-            if (existing == null) {
-                val soundUri = Uri.parse(
-                    "android.resource://$packageName/raw/ring1"
-                )
+            if (notifManager.getNotificationChannel(CHANNEL_ID) == null) {
+                val soundUri = Uri.parse("android.resource://$packageName/raw/ring1")
                 val audioAttr = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -61,43 +61,39 @@ class CallNotificationService : ExpoFirebaseMessagingService() {
             }
         }
 
-        val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
-        val acceptIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("notifType", "call_offer")
-            putExtra("notifAction", "accept")
-            putExtra("caller",   caller)
-            putExtra("fromName", fromName)
-            putExtra("callType", callType)
-            putExtra("offerId",  offerId)
-            putExtra("roomId",   roomId)
-            data.forEach { (k, v) -> putExtra(k, v) }
-        } ?: return
+        // Construir el intent de aceptar — capturamos msgData fuera del apply para evitar
+        // el conflicto con Intent.data (Uri) dentro del bloque
+        val launchBase = packageManager.getLaunchIntentForPackage(packageName) ?: return
+        launchBase.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        launchBase.putExtra("notifType",   "call_offer")
+        launchBase.putExtra("notifAction", "accept")
+        launchBase.putExtra("caller",      caller)
+        launchBase.putExtra("fromName",    fromName)
+        launchBase.putExtra("callType",    callType)
+        launchBase.putExtra("offerId",     offerId)
+        launchBase.putExtra("roomId",      roomId)
+        for ((k, v) in msgData) { launchBase.putExtra(k, v) }
 
-        val acceptPI    = PendingIntent.getActivity(this, 0, acceptIntent, pendingFlags)
-        val fullScreenPI = PendingIntent.getActivity(this, 1, acceptIntent, pendingFlags)
+        val acceptPI     = PendingIntent.getActivity(this, 0, launchBase, pFlags)
+        val fullScreenPI = PendingIntent.getActivity(this, 1, launchBase, pFlags)
 
-        val rejectIntent = Intent(ACTION_REJECT).apply {
-            setClass(this@CallNotificationService, CallRejectReceiver::class.java)
-            putExtra("offerId", offerId)
-        }
-        val rejectPI = PendingIntent.getBroadcast(this, 2, rejectIntent, pendingFlags)
+        val rejectIntent = Intent(ACTION_REJECT)
+        rejectIntent.setClass(this, CallRejectReceiver::class.java)
+        rejectIntent.putExtra("offerId", offerId)
+        val rejectPI = PendingIntent.getBroadcast(this, 2, rejectIntent, pFlags)
 
-        val iconResId = resources.getIdentifier("ic_launcher", "mipmap", packageName)
-            .takeIf { it != 0 } ?: android.R.drawable.ic_menu_call
+        val iconRes = resources.getIdentifier("ic_launcher", "mipmap", packageName)
+            .let { if (it != 0) it else android.R.drawable.ic_menu_call }
 
-        val callerPerson = Person.Builder()
-            .setName(fromName)
-            .setImportant(true)
-            .build()
+        val callerPerson = Person.Builder().setName(fromName).setImportant(true).build()
 
-        val isVideo = callType == "video"
-        val title   = if (isVideo) "📹 Videollamada de $fromName" else "📞 Llamada de $fromName"
-        val body    = if (isVideo) "Toca para responder la videollamada" else "Toca para responder"
+        val title = if (isVideo) "📹 Videollamada de $fromName" else "📞 Llamada de $fromName"
+        val body  = if (isVideo) "Toca para responder la videollamada" else "Toca para responder"
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(iconResId)
+            .setSmallIcon(iconRes)
             .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -110,7 +106,8 @@ class CallNotificationService : ExpoFirebaseMessagingService() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setStyle(
-                NotificationCompat.CallStyle.forIncomingCall(callerPerson, rejectPI, acceptPI)
+                NotificationCompat.CallStyle
+                    .forIncomingCall(callerPerson, rejectPI, acceptPI)
                     .setIsVideo(isVideo)
             )
         } else {
