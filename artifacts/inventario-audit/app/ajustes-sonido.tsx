@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as IntentLauncher from "expo-intent-launcher";
@@ -607,6 +608,14 @@ export default function AjustesSonido() {
           </>
         )}
 
+        {/* ══ VERSIÓN DE LA APP ══════════════════════════════════════════════ */}
+        <View style={s.versionBox}>
+          <Feather name="package" size={14} color={TEXT_MUTED} />
+          <Text style={s.versionText}>
+            AuditStock · v{Constants.expoConfig?.version ?? "1.0.0"} ({Constants.expoConfig?.android?.versionCode ?? "—"})
+          </Text>
+        </View>
+
       </ScrollView>
     </View>
   );
@@ -627,6 +636,8 @@ const s = StyleSheet.create({
   subLabel:   { fontSize: 11, color: TEXT_MUTED, marginTop: 2 },
   subHint:    { fontSize: 11, color: TEXT_MUTED, marginTop: 2, fontStyle: "italic" },
   playBtn:    { width: 30, height: 30, alignItems: "center", justifyContent: "center", marginRight: 4 },
-  tipBox:  { flexDirection: "row", gap: 8, backgroundColor: `${PRIMARY}10`, borderRadius: 10, padding: 12, marginTop: 20, borderWidth: 1, borderColor: `${PRIMARY}25` },
-  tipText: { flex: 1, fontSize: 12, color: TEXT_SEC, lineHeight: 18 },
+  tipBox:     { flexDirection: "row", gap: 8, backgroundColor: `${PRIMARY}10`, borderRadius: 10, padding: 12, marginTop: 20, borderWidth: 1, borderColor: `${PRIMARY}25` },
+  tipText:    { flex: 1, fontSize: 12, color: TEXT_SEC, lineHeight: 18 },
+  versionBox: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 32, marginBottom: 8 },
+  versionText:{ fontSize: 12, color: TEXT_MUTED },
 });
