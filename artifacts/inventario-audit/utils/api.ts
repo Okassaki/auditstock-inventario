@@ -154,7 +154,7 @@ export interface MensajeAPI {
   leido: boolean;
   creadoAt: string;
   adjuntoUrl?: string | null;
-  adjuntoTipo?: "imagen" | "documento" | "contacto" | "audio" | null;
+  adjuntoTipo?: "imagen" | "video" | "documento" | "contacto" | "audio" | null;
   adjuntoNombre?: string | null;
   reenviado?: boolean;
   eliminadoTodos?: boolean;
@@ -180,7 +180,7 @@ export async function enviarMensaje(
   texto: string,
   paraTienda?: string,
   adjuntoUrl?: string,
-  adjuntoTipo?: "imagen" | "documento" | "contacto" | "audio",
+  adjuntoTipo?: "imagen" | "video" | "documento" | "contacto" | "audio",
   adjuntoNombre?: string,
   reenviado?: boolean,
 ): Promise<MensajeAPI> {
