@@ -25,7 +25,7 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { ActiveCallOverlay } from "@/components/ActiveCallOverlay";
 import { registerForPushNotificationsAsync, openNotificationSettings } from "@/utils/notifications";
 import { saveCodigoForBackground, registerBackgroundMessages } from "@/utils/backgroundMessages";
-import { checkForUpdate, registerUpdateCallback } from "@/utils/updateChecker";
+import { checkForUpdate, registerUpdateCallback, registerBackgroundUpdateChecker, currentVersionCode } from "@/utils/updateChecker";
 import { connectChatSocket, disconnectChatSocket } from "@/utils/chatSocket";
 import { UpdateModal, type UpdateInfo } from "@/components/UpdateModal";
 
@@ -60,16 +60,17 @@ function RootLayoutNav() {
   const notifListenerRef = useRef<Notifications.Subscription | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
-  // Registrar callback del modal de actualizaciones
+  // Registrar callback del modal de actualizaciones + tarea de fondo
   useEffect(() => {
     registerUpdateCallback(setUpdateInfo);
+    registerBackgroundUpdateChecker().catch(() => {});
   }, []);
 
   // Verificar actualizaciones al abrir la app y cada 10 minutos
   useEffect(() => {
     if (storeLoading || bossLoading) return;
     const initial = setTimeout(() => checkForUpdate({ silent: true }), 5_000);
-    const interval = setInterval(() => checkForUpdate({ silent: true }), 10 * 60 * 1000);
+    const interval = setInterval(() => checkForUpdate({ silent: true }), 3 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [storeLoading, bossLoading]);
 
@@ -121,6 +122,17 @@ function RootLayoutNav() {
     notifListenerRef.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as Record<string, string> | undefined;
       if (!data) return;
+
+      // Notificación de actualización disponible
+      if (data.type === "update_available") {
+        setUpdateInfo({
+          versionCode: Number(data.versionCode ?? 0),
+          currentCode: currentVersionCode(),
+          name: data.releaseName ?? `v${data.versionCode}`,
+          downloadUrl: data.downloadUrl ?? "",
+        });
+        return;
+      }
 
       // Notificación de llamada entrante
       if (data.type === "call_offer") {
