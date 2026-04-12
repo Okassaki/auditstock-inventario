@@ -3,6 +3,7 @@ import * as FileSystem from "expo-file-system";
 import * as Notifications from "expo-notifications";
 import { Linking, Platform } from "react-native";
 import { API_URL } from "./api";
+import { getCallTone, getMsgTone, getCustomCallUri, getSystemCallUri } from "./ringtone";
 
 export type PushRegResult =
   | { ok: true; token: string }
@@ -28,12 +29,31 @@ export async function registerForPushNotificationsAsync(
   }
 
   if (Platform.OS === "android") {
-    // Guardar URL de la API para que el receptor nativo (CallRejectReceiver) pueda usarla
+    // Leer preferencias de tono guardadas
+    let callSound = "ring1"; // valor para el servicio nativo Kotlin
+    let callBundled: string | null = "ring1.wav"; // para el canal Expo (solo soporta archivos bundled)
+    let msgBundled: string | null = "ping.wav";
+    try {
+      const [ct, mt, sysCallUri, custCallUri] = await Promise.all([
+        getCallTone(), getMsgTone(), getSystemCallUri(), getCustomCallUri(),
+      ]);
+      if (ct === "ring2")       { callSound = "ring2";  callBundled = "ring2.wav"; }
+      else if (ct === "ring3")  { callSound = "ring3";  callBundled = "ring3.wav"; }
+      else if (ct === "silent") { callSound = "silent"; callBundled = null; }
+      else if (ct === "system" && sysCallUri) { callSound = sysCallUri; callBundled = "ring1.wav"; }
+      else if (ct === "custom" && custCallUri) { callSound = custCallUri; callBundled = "ring1.wav"; }
+
+      if (mt === "chime")      msgBundled = "chime.wav";
+      else if (mt === "pop")   msgBundled = "pop.wav";
+      else if (mt === "silent") msgBundled = null;
+    } catch {}
+
+    // Guardar configuración para CallNotificationService.kt y CallRejectReceiver.kt
     try {
       if (FileSystem.documentDirectory) {
         await FileSystem.writeAsStringAsync(
           FileSystem.documentDirectory + "native_config.json",
-          JSON.stringify({ apiUrl: API_URL }),
+          JSON.stringify({ apiUrl: API_URL, callSound }),
         );
       }
     } catch {}
@@ -45,7 +65,7 @@ export async function registerForPushNotificationsAsync(
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#00D4FF",
-      sound: "ping.wav",
+      sound: msgBundled ?? "default",
       enableVibrate: true,
     });
     await Notifications.setNotificationChannelAsync("llamadas", {
@@ -53,9 +73,8 @@ export async function registerForPushNotificationsAsync(
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 500, 250, 500],
       lightColor: "#8B5CF6",
-      sound: "ring1.wav",
+      sound: callBundled ?? "default",
       enableVibrate: true,
-      // Usar el volumen de "Tono de llamada" en lugar del volumen de notificaciones
       audioAttributesUsage: 6 as any, // AudioAttributes.USAGE_NOTIFICATION_RINGTONE
     });
   }
