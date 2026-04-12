@@ -117,14 +117,16 @@ export async function registerBackgroundUpdateChecker(): Promise<void> {
       status === BackgroundFetch.BackgroundFetchStatus.Denied
     ) return;
 
+    // Siempre re-registrar para aplicar el intervalo más reciente
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BG_TASK_NAME);
-    if (!isRegistered) {
-      await BackgroundFetch.registerTaskAsync(BG_TASK_NAME, {
-        minimumInterval: 60 * 60 * 6, // Revisar cada 6 horas
-        stopOnTerminate: false,         // Seguir corriendo aunque se cierre la app
-        startOnBoot: true,              // Iniciar tras reinicio del dispositivo
-      });
+    if (isRegistered) {
+      await BackgroundFetch.unregisterTaskAsync(BG_TASK_NAME);
     }
+    await BackgroundFetch.registerTaskAsync(BG_TASK_NAME, {
+      minimumInterval: 60 * 15, // Revisar cada 15 minutos (mínimo que permite Android)
+      stopOnTerminate: false,    // Seguir corriendo aunque se cierre la app
+      startOnBoot: true,         // Iniciar tras reinicio del dispositivo
+    });
   } catch {}
 }
 
