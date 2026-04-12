@@ -4,7 +4,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { Audio } from "expo-av";
+import { Audio, Video, ResizeMode } from "expo-av";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -206,6 +206,10 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
   const [playSpeed, setPlaySpeed] = useState<number>(1.0);
   const soundRef = useRef<Audio.Sound | null>(null);
 
+  // Visor de medios (imagen/video a pantalla completa)
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; tipo: "imagen" | "video" } | null>(null);
+  const videoViewerRef = useRef<Video | null>(null);
+
   // ── Fetch mensajes ──────────────────────────────────────────────────────
 
   const fetchMsgs = useCallback(
@@ -262,7 +266,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
   async function doEnviar(opts: {
     texto?: string;
     adjuntoUrl?: string;
-    adjuntoTipo?: "imagen" | "documento" | "contacto" | "audio";
+    adjuntoTipo?: "imagen" | "video" | "documento" | "contacto" | "audio";
     adjuntoNombre?: string;
     reenviado?: boolean;
   }) {
@@ -322,6 +326,24 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
       await doEnviar({ adjuntoUrl: url, adjuntoTipo: "imagen", adjuntoNombre: nombre });
     } catch {
       setError("Error al subir imagen");
+      setEnviando(false);
+    }
+  }
+
+  async function handleVideo() {
+    setShowAttach(false);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== "granted") return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["videos"] });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    try {
+      setEnviando(true);
+      const nombre = asset.fileName ?? `video_${Date.now()}.mp4`;
+      const { url } = await uploadArchivo(asset.uri, nombre, asset.mimeType ?? "video/mp4");
+      await doEnviar({ adjuntoUrl: url, adjuntoTipo: "video", adjuntoNombre: nombre });
+    } catch {
+      setError("Error al subir video");
       setEnviando(false);
     }
   }
@@ -589,7 +611,7 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
         m.texto ?? "",
         destino === "GENERAL" ? undefined : destino,
         m.adjuntoUrl ?? undefined,
-        m.adjuntoTipo as "imagen" | "documento" | "contacto" | undefined,
+        m.adjuntoTipo as "imagen" | "video" | "documento" | "contacto" | undefined,
         m.adjuntoNombre ?? undefined,
         true,
       ).catch(() => {});
@@ -646,7 +668,18 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
               )}
               <View style={[s.bubble, esMio ? s.bubbleMio : s.bubbleAjeno]}>
                 {msg.adjuntoTipo === "imagen" && msg.adjuntoUrl && (
-                  <Image source={{ uri: msg.adjuntoUrl }} style={s.adjuntoImg} contentFit="cover" />
+                  <TouchableOpacity activeOpacity={0.85} onPress={() => setMediaViewer({ url: msg.adjuntoUrl!, tipo: "imagen" })}>
+                    <Image source={{ uri: msg.adjuntoUrl }} style={s.adjuntoImg} contentFit="cover" />
+                    <View style={s.mediaExpandHint}>
+                      <Feather name="maximize-2" size={11} color="rgba(255,255,255,0.8)" />
+                    </View>
+                  </TouchableOpacity>
+                )}
+                {msg.adjuntoTipo === "video" && msg.adjuntoUrl && (
+                  <TouchableOpacity style={s.videoThumb} activeOpacity={0.85} onPress={() => setMediaViewer({ url: msg.adjuntoUrl!, tipo: "video" })}>
+                    <Feather name="play-circle" size={44} color="rgba(255,255,255,0.92)" />
+                    <Text style={s.videoLabel} numberOfLines={1}>{msg.adjuntoNombre ?? "Video"}</Text>
+                  </TouchableOpacity>
                 )}
                 {msg.adjuntoTipo === "documento" && (
                   <View style={s.adjuntoDoc}>
@@ -928,10 +961,11 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
           <Animated.View style={[s.attachPanel, { transform: [{ translateY: attachTranslateY }], opacity: attachOpacity }]}>
             <View style={s.attachGrid}>
               {[
-                { icono: "camera", label: "Cámara", color: "#FF4D8D", onPress: handleCamara },
-                { icono: "image", label: "Galería", color: "#00B4FF", onPress: handleGaleria },
+                { icono: "camera",    label: "Cámara",    color: "#FF4D8D", onPress: handleCamara },
+                { icono: "image",     label: "Galería",   color: "#00B4FF", onPress: handleGaleria },
+                { icono: "video",     label: "Video",     color: "#F59E0B", onPress: handleVideo },
                 { icono: "file-text", label: "Documento", color: "#7C3AED", onPress: handleDocumento },
-                { icono: "user", label: "Contacto", color: "#10B981", onPress: handleContacto },
+                { icono: "user",      label: "Contacto",  color: "#10B981", onPress: handleContacto },
               ].map((item) => (
                 <TouchableOpacity key={item.label} style={s.attachItem} onPress={item.onPress}>
                   <View style={[s.attachIcon, { backgroundColor: item.color + "22", borderColor: item.color + "44" }]}>
@@ -978,6 +1012,44 @@ export default function ChatRoomView({ yo, con, conNombre, mode }: Props) {
           <Text style={s.reenviandoText}>Reenviando...</Text>
         </View>
       )}
+
+      {/* ── Visor de medios a pantalla completa ─────────────────────────── */}
+      <Modal
+        visible={!!mediaViewer}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { setMediaViewer(null); videoViewerRef.current?.pauseAsync().catch(() => {}); }}
+        statusBarTranslucent
+      >
+        <View style={s.mediaOverlay}>
+          <TouchableOpacity
+            style={s.mediaCloseBtn}
+            onPress={() => { setMediaViewer(null); videoViewerRef.current?.pauseAsync().catch(() => {}); }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Feather name="x" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          {mediaViewer?.tipo === "imagen" && (
+            <Image
+              source={{ uri: mediaViewer.url }}
+              style={s.mediaFullImage}
+              contentFit="contain"
+            />
+          )}
+
+          {mediaViewer?.tipo === "video" && (
+            <Video
+              ref={videoViewerRef}
+              source={{ uri: mediaViewer.url }}
+              style={s.mediaFullVideo}
+              resizeMode={ResizeMode.CONTAIN}
+              useNativeControls
+              shouldPlay
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1036,6 +1108,25 @@ function makeStyles(T: Theme) {
     horaMio: { marginRight: 4, textAlign: "right" },
     horaAjeno: { marginLeft: 4 },
     adjuntoImg: { width: 200, height: 180, borderRadius: 12 },
+    mediaExpandHint: {
+      position: "absolute", bottom: 6, right: 6,
+      backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 6, padding: 4,
+    },
+    videoThumb: {
+      width: 200, height: 140, borderRadius: 12,
+      backgroundColor: "#111", alignItems: "center", justifyContent: "center", gap: 8,
+    },
+    videoLabel: { fontSize: 11, color: "rgba(255,255,255,0.65)", maxWidth: 180, textAlign: "center" },
+    mediaOverlay: {
+      flex: 1, backgroundColor: "rgba(0,0,0,0.97)",
+      alignItems: "center", justifyContent: "center",
+    },
+    mediaCloseBtn: {
+      position: "absolute", top: 48, right: 20, zIndex: 10,
+      backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 50, padding: 10,
+    },
+    mediaFullImage: { width: "100%", height: "85%" },
+    mediaFullVideo: { width: "100%", height: 320 },
     adjuntoDoc: {
       flexDirection: "row", alignItems: "center", gap: 10,
       paddingHorizontal: 14, paddingVertical: 12, minWidth: 160, maxWidth: 220,
