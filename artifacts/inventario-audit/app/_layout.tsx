@@ -60,19 +60,18 @@ function RootLayoutNav() {
   const notifListenerRef = useRef<Notifications.Subscription | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
-  // Registrar callback del modal de actualizaciones + tarea de fondo
+  // Registrar callback + verificar actualización inmediatamente al abrir la app
   useEffect(() => {
     registerUpdateCallback(setUpdateInfo);
     registerBackgroundUpdateChecker().catch(() => {});
+    checkForUpdate({ silent: true }).catch(() => {});
   }, []);
 
-  // Verificar actualizaciones al abrir la app y cada 10 minutos
+  // Verificar periódicamente cada 3 minutos mientras la app está abierta
   useEffect(() => {
-    if (storeLoading || bossLoading) return;
-    const initial = setTimeout(() => checkForUpdate({ silent: true }), 5_000);
     const interval = setInterval(() => checkForUpdate({ silent: true }), 3 * 60 * 1000);
-    return () => { clearTimeout(initial); clearInterval(interval); };
-  }, [storeLoading, bossLoading]);
+    return () => clearInterval(interval);
+  }, []);
 
   // Conectar WebSocket para mensajes en tiempo real
   useEffect(() => {
