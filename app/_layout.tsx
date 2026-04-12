@@ -70,7 +70,7 @@ function RootLayoutNav() {
   useEffect(() => {
     if (storeLoading || bossLoading) return;
     const initial = setTimeout(() => checkForUpdate({ silent: true }), 5_000);
-    const interval = setInterval(() => checkForUpdate({ silent: true }), 10 * 60 * 1000);
+    const interval = setInterval(() => checkForUpdate({ silent: true }), 3 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [storeLoading, bossLoading]);
 
