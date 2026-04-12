@@ -13,6 +13,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import org.json.JSONObject
+import java.io.File
 
 class CallNotificationService : FirebaseMessagingService() {
 
@@ -26,12 +28,71 @@ class CallNotificationService : FirebaseMessagingService() {
         if (remoteMessage.data["type"] == "call_offer") {
             showFullScreenCallNotification(remoteMessage.data)
         }
-        // Mensajes con payload notification son mostrados directamente por el sistema Android
     }
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        // La app actualiza el token en el próximo inicio — no se requiere acción aquí
+    }
+
+    /**
+     * Lee el valor "callSound" del archivo native_config.json.
+     * Retorna "ring1", "ring2", "ring3", "silent", o una URI de sistema/custom.
+     */
+    private fun readCallSound(): String {
+        return try {
+            val file = File(filesDir, "native_config.json")
+            if (file.exists()) JSONObject(file.readText()).optString("callSound", "ring1")
+            else "ring1"
+        } catch (_: Exception) { "ring1" }
+    }
+
+    /**
+     * Convierte el callSound en una Uri de Android para el canal de notificación.
+     * Retorna null si el tono es "silent".
+     */
+    private fun callSoundToUri(callSound: String): Uri? {
+        return when (callSound) {
+            "silent" -> null
+            "ring2"  -> Uri.parse("android.resource://$packageName/raw/ring2")
+            "ring3"  -> Uri.parse("android.resource://$packageName/raw/ring3")
+            "ring1"  -> Uri.parse("android.resource://$packageName/raw/ring1")
+            else     -> runCatching { Uri.parse(callSound) }.getOrNull()
+                ?: Uri.parse("android.resource://$packageName/raw/ring1")
+        }
+    }
+
+    /**
+     * Asegura que el canal "llamadas" exista con el sonido correcto.
+     * Si el canal existe pero tiene un sonido diferente al guardado, lo elimina y recrea.
+     */
+    private fun ensureCallChannel(notifManager: NotificationManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val callSound   = readCallSound()
+        val desiredUri  = callSoundToUri(callSound)
+        val desiredStr  = desiredUri?.toString()
+
+        val existing   = notifManager.getNotificationChannel(CHANNEL_ID)
+        val currentStr = existing?.sound?.toString()
+
+        if (existing != null && currentStr == desiredStr) return
+
+        // Eliminar si existe con sonido diferente
+        if (existing != null) {
+            notifManager.deleteNotificationChannel(CHANNEL_ID)
+        }
+
+        val audioAttr = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
+        val ch = NotificationChannel(CHANNEL_ID, "Llamadas", NotificationManager.IMPORTANCE_HIGH)
+        ch.setSound(desiredUri, audioAttr)
+        ch.enableVibration(true)
+        ch.vibrationPattern = longArrayOf(0, 500, 250, 500)
+        ch.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        notifManager.createNotificationChannel(ch)
     }
 
     private fun showFullScreenCallNotification(msgData: Map<String, String>) {
@@ -43,28 +104,10 @@ class CallNotificationService : FirebaseMessagingService() {
         val isVideo  = callType == "video"
 
         val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (notifManager.getNotificationChannel(CHANNEL_ID) == null) {
-                val soundUri = Uri.parse("android.resource://$packageName/raw/ring1")
-                val audioAttr = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-                val ch = NotificationChannel(CHANNEL_ID, "Llamadas", NotificationManager.IMPORTANCE_HIGH).apply {
-                    setSound(soundUri, audioAttr)
-                    enableVibration(true)
-                    vibrationPattern = longArrayOf(0, 500, 250, 500)
-                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                }
-                notifManager.createNotificationChannel(ch)
-            }
-        }
+        ensureCallChannel(notifManager)
 
         val pFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
-        // Construir el intent de aceptar — capturamos msgData fuera del apply para evitar
-        // el conflicto con Intent.data (Uri) dentro del bloque
         val launchBase = packageManager.getLaunchIntentForPackage(packageName) ?: return
         launchBase.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         launchBase.putExtra("notifType",   "call_offer")
