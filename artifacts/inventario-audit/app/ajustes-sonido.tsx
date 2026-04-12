@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
@@ -66,6 +67,24 @@ const MSG_TONES: { label: string; value: MsgTone; icon: string }[] = [
 ];
 
 const PKG = "com.auditstock.inventario";
+
+async function updateNativeCallSound(tone: CallTone, sysUri?: string | null, custUri?: string | null) {
+  if (Platform.OS !== "android") return;
+  try {
+    let callSound = "ring1";
+    if (tone === "ring2")       callSound = "ring2";
+    else if (tone === "ring3")  callSound = "ring3";
+    else if (tone === "silent") callSound = "silent";
+    else if (tone === "system" && sysUri) callSound = sysUri;
+    else if (tone === "custom" && custUri) callSound = custUri;
+
+    const docDir = FileSystem.documentDirectory;
+    if (!docDir) return;
+    let existing: Record<string, unknown> = {};
+    try { existing = JSON.parse(await FileSystem.readAsStringAsync(docDir + "native_config.json")); } catch {}
+    await FileSystem.writeAsStringAsync(docDir + "native_config.json", JSON.stringify({ ...existing, callSound }));
+  } catch {}
+}
 
 function callToneToBundled(v: CallTone): string | null {
   if (v === "ring1") return "ring1.wav";
@@ -150,6 +169,7 @@ export default function AjustesSonido() {
     setCallToneState(v);
     await setCallTone(v);
     await recreateChannel("llamadas", callToneToBundled(v));
+    await updateNativeCallSound(v);
     if (v !== "silent" && v !== "custom" && v !== "system") {
       setPreviewing(v);
       await previewSound(v);
@@ -216,6 +236,7 @@ export default function AjustesSonido() {
         setSystemCallName(name);
         setCallToneState("system");
         await recreateChannel("llamadas", "ring1.wav");
+        await updateNativeCallSound("system", uri);
       } else {
         await setSystemMsg(uri, name);
         await setMsgTone("system");
@@ -251,6 +272,7 @@ export default function AjustesSonido() {
       setCustomCallName(name);
       setCallToneState("custom");
       await recreateChannel("llamadas", "ring1.wav");
+      await updateNativeCallSound("custom", null, uri);
       setPreviewing("custom_call");
       await previewSound("custom", uri);
       setTimeout(() => setPreviewing(null), 4000);
