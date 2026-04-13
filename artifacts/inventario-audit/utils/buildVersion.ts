@@ -7,4 +7,4 @@
  * Es la fuente más confiable en builds standalone (no depende de módulos nativos
  * ni de que Constants.expoConfig esté poblado correctamente).
  */
-export const BUILD_VERSION_CODE = 50;
+export const BUILD_VERSION_CODE = 51;
