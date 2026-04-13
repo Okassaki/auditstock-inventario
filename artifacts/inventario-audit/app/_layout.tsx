@@ -108,21 +108,43 @@ function RootLayoutNav() {
   }, [storeConfig, bossAuthenticated, storeLoading, bossLoading]);
 
   // Solicitar exclusión de optimización de batería (Android) — solo la primera vez.
-  // Muestra un diálogo del sistema con un solo toque "Permitir".
-  // Sin esto, Android puede matar el proceso de FCM y las llamadas no llegan con la app cerrada.
+  // Muestra primero un Alert explicativo; al tocar "Activar", abre el diálogo del sistema
+  // donde el usuario solo tiene que tocar "Permitir". Sin esto, Android mata FCM y las
+  // llamadas no llegan cuando la app está cerrada.
   useEffect(() => {
     if (Platform.OS !== "android") return;
     if (storeLoading || bossLoading) return;
     const isConfigured = bossAuthenticated || !!storeConfig;
     if (!isConfigured) return;
-    AsyncStorage.getItem("battery_opt_asked").then((val) => {
-      if (val) return;
-      AsyncStorage.setItem("battery_opt_asked", "true").catch(() => {});
-      IntentLauncher.startActivityAsync(
-        "android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-        { data: "package:com.auditstock.inventario" },
-      ).catch(() => {});
-    }).catch(() => {});
+    // Esperar que la UI esté completamente visible antes de mostrar diálogos
+    const timer = setTimeout(() => {
+      AsyncStorage.getItem("battery_opt_asked").then((val) => {
+        if (val) return;
+        Alert.alert(
+          "Recibir llamadas con la app cerrada",
+          "Para que las llamadas lleguen aunque la app no esté abierta, necesitás desactivar la optimización de batería para AuditStock. Solo es un toque.",
+          [
+            { text: "Ahora no", style: "cancel" },
+            {
+              text: "Activar",
+              onPress: () => {
+                AsyncStorage.setItem("battery_opt_asked", "true").catch(() => {});
+                IntentLauncher.startActivityAsync(
+                  "android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+                  { data: "package:com.auditstock.inventario" },
+                ).catch(() => {
+                  // Fallback: abrir configuración general de batería si el intent no está disponible
+                  IntentLauncher.startActivityAsync(
+                    "android.settings.BATTERY_SAVER_SETTINGS",
+                  ).catch(() => {});
+                });
+              },
+            },
+          ],
+        );
+      }).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeLoading, bossLoading, bossAuthenticated, storeConfig]);
 
