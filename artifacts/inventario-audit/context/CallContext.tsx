@@ -84,7 +84,7 @@ const CallContext = createContext<CallContextValue>({
   triggerIncomingCallFromNotification: () => {},
 });
 
-const INCOMING_POLL_MS = 3000;
+const INCOMING_POLL_MS = 1500;
 
 async function apiPost(path: string, body: object): Promise<unknown> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -188,7 +188,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       pollTimerRef.current = setTimeout(tick, INCOMING_POLL_MS);
     };
-    pollTimerRef.current = setTimeout(tick, INCOMING_POLL_MS);
+    // Primera comprobación inmediata (detecta llamada pendiente al abrir desde notificación)
+    void tick();
   }, [clearPoll, myCode, startRinging]);
 
   useEffect(() => {
