@@ -194,6 +194,35 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return clearPoll;
   }, [callState, myCode, pollIncoming, pollOutgoing, clearPoll]);
 
+  // Cuando hay una llamada entrante (sonando), monitorear si el llamante canceló.
+  // Si el offer pasa a "cancelled" o "expired" → dejar de sonar automáticamente.
+  const incomingOfferId = incomingCall?.offerId ?? null;
+  useEffect(() => {
+    if (callState !== "incoming" || !incomingOfferId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const data = (await apiGet(`/calls/status/${incomingOfferId}`)) as { response: string };
+        if (data.response === "cancelled" || data.response === "expired") {
+          stopRinging();
+          setIncomingCall(null);
+          setCallState("idle");
+          return;
+        }
+      } catch {}
+      if (!cancelled) timer = setTimeout(tick, 2000);
+    };
+
+    timer = setTimeout(tick, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [callState, incomingOfferId, stopRinging]);
+
   // Reanudar polling al volver al frente
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
