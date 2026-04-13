@@ -1,5 +1,6 @@
 package com.auditstock.inventario
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -21,17 +22,17 @@ class CallNotificationService : FirebaseMessagingService() {
 
     companion object {
         const val NOTIF_ID      = 9001
-        // ID nuevo para evitar que Android restaure ajustes de audio incorrectos
-        // del canal antiguo "llamadas" (que fue creado con USAGE_NOTIFICATION en vez de RINGTONE)
         const val CHANNEL_ID    = "llamadas_v2"
         const val ACTION_REJECT = "com.auditstock.inventario.REJECT_CALL"
-
         private const val WAKE_TAG = "AuditStock:CallWake"
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         if (remoteMessage.data["type"] == "call_offer") {
             showFullScreenCallNotification(remoteMessage.data)
+        } else {
+            // Pasar mensajes normales (chat, updates, etc.) al handler de Expo
+            super.onMessageReceived(remoteMessage)
         }
     }
 
@@ -39,10 +40,6 @@ class CallNotificationService : FirebaseMessagingService() {
         super.onNewToken(token)
     }
 
-    /**
-     * Lee el valor "callSound" del archivo native_config.json.
-     * Retorna "ring1", "ring2", "ring3", "silent", o una URI de sistema/custom.
-     */
     private fun readCallSound(): String {
         return try {
             val file = File(filesDir, "native_config.json")
@@ -51,10 +48,6 @@ class CallNotificationService : FirebaseMessagingService() {
         } catch (_: Exception) { "ring1" }
     }
 
-    /**
-     * Convierte el callSound en una Uri de Android para el canal de notificación.
-     * Retorna null si el tono es "silent".
-     */
     private fun callSoundToUri(callSound: String): Uri? {
         return when (callSound) {
             "silent" -> null
@@ -67,19 +60,18 @@ class CallNotificationService : FirebaseMessagingService() {
     }
 
     /**
-     * Siempre borra y recrea el canal "llamadas" para garantizar que se use
-     * USAGE_NOTIFICATION_RINGTONE (no USAGE_NOTIFICATION) y el tono correcto.
-     * Esto evita que un canal creado por Expo con atributos incorrectos persista.
+     * Siempre borra y recrea el canal con USAGE_NOTIFICATION_RINGTONE.
+     * El canal "llamadas_v2" es un ID nuevo — Android no tiene historial
+     * de ajustes guardados para él, así que usa exactamente lo que especificamos.
      */
     private fun recreateCallChannel(notifManager: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-        val callSound  = readCallSound()
-        val soundUri   = callSoundToUri(callSound)
+        val callSound = readCallSound()
+        val soundUri  = callSoundToUri(callSound)
 
-        // Limpiar canal viejo "llamadas" (tenía USAGE_NOTIFICATION incorrecto)
+        // Limpiar canal viejo si existe
         notifManager.deleteNotificationChannel("llamadas")
-        // Borrar el canal actual si existe (empezar limpio)
         notifManager.deleteNotificationChannel(CHANNEL_ID)
 
         val audioAttr = AudioAttributes.Builder()
@@ -96,21 +88,30 @@ class CallNotificationService : FirebaseMessagingService() {
     }
 
     /**
-     * Adquiere un WakeLock para despertar la pantalla cuando llega una llamada
-     * mientras el teléfono está en reposo / pantalla apagada.
+     * Detecta si la app está en primer plano (usuario la está usando activamente).
+     * En ese caso, el overlay JS ya muestra la pantalla de llamada y maneja el audio.
+     * La notificación se muestra de forma silenciosa (sin sonido/vibración) para
+     * no interferir con el ringtone del overlay.
      */
+    private fun isAppInForeground(): Boolean {
+        return try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val procs = am.runningAppProcesses ?: return false
+            procs.any { it.processName == packageName &&
+                it.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND }
+        } catch (_: Exception) { false }
+    }
+
     @Suppress("DEPRECATION")
     private fun acquireWakeLock(): PowerManager.WakeLock? {
         return try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            // FULL_WAKE_LOCK enciende pantalla; ON_AFTER_RELEASE la mantiene unos segundos
             val wl = pm.newWakeLock(
                 PowerManager.FULL_WAKE_LOCK
                     or PowerManager.ACQUIRE_CAUSES_WAKEUP
                     or PowerManager.ON_AFTER_RELEASE,
                 WAKE_TAG
             )
-            // Mantener despierto 30 s — suficiente para que el usuario vea/responda
             wl.acquire(30_000L)
             wl
         } catch (_: Exception) { null }
@@ -123,14 +124,15 @@ class CallNotificationService : FirebaseMessagingService() {
         val offerId  = msgData["offerId"]  ?: ""
         val roomId   = msgData["roomId"]   ?: ""
         val isVideo  = callType == "video"
+        val inForeground = isAppInForeground()
 
         val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Siempre recrear el canal con atributos de RINGTONE correctos
+        // Siempre recrear el canal con RINGTONE correcto
         recreateCallChannel(notifManager)
 
-        // Despertar pantalla si está apagada/en reposo
-        val wakeLock = acquireWakeLock()
+        // Solo despertar pantalla si la app está en background/cerrada
+        val wakeLock = if (!inForeground) acquireWakeLock() else null
 
         val pFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
@@ -177,7 +179,13 @@ class CallNotificationService : FirebaseMessagingService() {
             .setFullScreenIntent(fullScreenPI, true)
             .setAutoCancel(false)
             .setOngoing(true)
-            .setTimeoutAfter(60_000L)  // auto-cancel después de 60 s si no hay respuesta
+            .setTimeoutAfter(60_000L)
+
+        // Si la app está en primer plano: silenciar la notificación del sistema.
+        // El overlay JS ya muestra la pantalla y reproduce el ringtone configurado.
+        if (inForeground) {
+            builder.setSilent(true)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setStyle(
@@ -192,8 +200,6 @@ class CallNotificationService : FirebaseMessagingService() {
         }
 
         notifManager.notify(NOTIF_ID, builder.build())
-
-        // Liberar WakeLock — Android ya se encargó de mostrar la notificación
         wakeLock?.release()
     }
 }
