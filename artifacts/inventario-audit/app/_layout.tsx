@@ -67,6 +67,24 @@ function RootLayoutNav() {
     checkForUpdate({ silent: true }).catch(() => {});
   }, []);
 
+  // Manejar llamada entrante desde notificación que LANZÓ la app (cold start)
+  // Se ejecuta inmediatamente al montar, sin esperar storeConfig/bossConfig.
+  useEffect(() => {
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) return;
+      const data = response.notification.request.content.data as Record<string, string> | undefined;
+      if (!data || data.type !== "call_offer") return;
+      const callerId = data.caller ?? data.from ?? "";
+      triggerIncomingCallFromNotification({
+        from: callerId,
+        fromName: data.fromName ?? callerId,
+        type: (data.callType as "audio" | "video") ?? "audio",
+        roomId: data.roomId ?? "",
+      });
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Verificar periódicamente cada 3 minutos mientras la app está abierta
   useEffect(() => {
     const interval = setInterval(() => checkForUpdate({ silent: true }), 3 * 60 * 1000);
