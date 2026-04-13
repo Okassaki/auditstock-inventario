@@ -51,13 +51,16 @@ async function notifyCallPush(offer: CallOffer) {
       return;
     }
     const row = rows[0];
-    const callTitle = `📞 Llamada entrante de ${offer.fromName}`;
-    const callBody =
-      offer.callType === "video"
-        ? "📹 Videollamada — toca para responder"
-        : "Toca para responder";
 
-    // SDP NO va en el push (excede el límite de 4KB de FCM).
+    const isVideo = offer.callType === "video";
+    const callTitle = isVideo
+      ? `📹 Videollamada de ${offer.fromName}`
+      : `📞 Llamada de ${offer.fromName}`;
+    const callBody = isVideo
+      ? "Toca para responder la videollamada"
+      : "Toca para responder";
+
+    // SDP NO va en el push (excede el límite de 4KB).
     // El callee lo recupera via GET /calls/signal/:offerId al aceptar.
     const callData: Record<string, string> = {
       type: "call_offer",
@@ -68,8 +71,41 @@ async function notifyCallPush(offer: CallOffer) {
       offerId: offer.offerId,
     };
 
+    // ── 1. EXPO PUSH — siempre enviado (garantiza entrega en modo Doze/app cerrada)
+    // La notificación Expo usa el canal "llamadas_v2" (IMPORTANCE_MAX + tono nativo).
+    // Esto es lo que suena cuando el teléfono está en reposo o la app está cerrada.
+    if (row.token) {
+      console.log("[push-call] Enviando Expo push a", offer.to);
+      const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "Accept-Encoding": "gzip, deflate",
+        },
+        body: JSON.stringify([
+          {
+            to: row.token,
+            title: callTitle,
+            body: callBody,
+            sound: "ring1.wav",  // bundled en la APK vía expo-notifications plugin
+            channelId: "llamadas_v2",  // canal nativo con IMPORTANCE_MAX + vibración
+            priority: "high",
+            ttl: 30,
+            data: callData,
+          },
+        ]),
+      });
+      const respBody = (await resp.json().catch(() => ({}))) as {
+        data?: Array<{ status: string; message?: string }>;
+      };
+      console.log("[push-call] Expo resp:", resp.status, JSON.stringify(respBody?.data ?? respBody));
+    }
+
+    // ── 2. FCM DATA-ONLY — secundario (active CallNotificationService para full-screen
+    // intent cuando la app está en background; no funciona en modo Doze/app cerrada).
     if (row.fcmToken && fcmReady()) {
-      console.log("[push-call] Enviando via FCM data-only a", offer.to);
+      console.log("[push-call] Enviando FCM data a", offer.to);
       const result = await sendFcmDataMessage({
         fcmToken: row.fcmToken,
         priority: "high",
@@ -89,32 +125,6 @@ async function notifyCallPush(offer: CallOffer) {
             .catch(() => {});
         }
       }
-    } else {
-      console.log("[push-call] Enviando via Expo push a", offer.to);
-      const resp = await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "Accept-Encoding": "gzip, deflate",
-        },
-        body: JSON.stringify([
-          {
-            to: row.token,
-            title: callTitle,
-            body: callBody,
-            sound: "default",
-            channelId: "llamadas",
-            priority: "high",
-            ttl: 30,
-            data: callData,
-          },
-        ]),
-      });
-      const body = (await resp.json().catch(() => ({}))) as {
-        data?: Array<{ status: string; message?: string }>;
-      };
-      console.log("[push-call] Expo resp:", resp.status, JSON.stringify(body?.data ?? body));
     }
   } catch (e) {
     console.error("[push-call] Error:", e);
