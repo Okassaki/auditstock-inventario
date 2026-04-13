@@ -5,6 +5,14 @@ import { eq } from "drizzle-orm";
 
 const clients = new Map<string, WebSocket>();
 
+/** Envía un mensaje JSON a un cliente específico si está conectado. */
+export function sendToCode(codigo: string, msg: Record<string, unknown>): void {
+  const ws = clients.get(codigo);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
 export function broadcastNewMessage(deTienda: string, paraTienda: string | null) {
   const payload = JSON.stringify({ type: "new_message", deTienda, paraTienda });
   if (paraTienda) {
