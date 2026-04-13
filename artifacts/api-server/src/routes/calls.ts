@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { db, pushTokensTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { fcmReady, sendFcmDataMessage } from "../lib/fcm";
+import { sendToCode } from "../lib/signaling";
 
 const router = Router();
 
@@ -154,7 +155,11 @@ router.post("/calls/offer", async (req, res) => {
 // Caller: cancela antes de que conteste
 router.post("/calls/cancel/:offerId", (req, res) => {
   const offer = offers.get(req.params.offerId);
-  if (offer && !offer.response) offer.response = "cancelled";
+  if (offer && !offer.response) {
+    offer.response = "cancelled";
+    // Notificar al callee via WS para dismiss instantáneo (no esperar poll)
+    sendToCode(offer.to, { type: "call_cancelled", offerId: req.params.offerId });
+  }
   res.json({ ok: true });
 });
 
