@@ -58,9 +58,7 @@ export async function registerForPushNotificationsAsync(
       }
     } catch {}
 
-    // Sólo gestionamos el canal de MENSAJES desde el lado JS/Expo.
-    // El canal "llamadas" es gestionado EXCLUSIVAMENTE por CallNotificationService.kt
-    // para garantizar que use USAGE_NOTIFICATION_RINGTONE y el tono correcto.
+    // Canal MENSAJES — gestionado desde JS/Expo
     await Notifications.deleteNotificationChannelAsync("mensajes").catch(() => {});
     await Notifications.setNotificationChannelAsync("mensajes", {
       name: "Mensajes",
@@ -70,6 +68,24 @@ export async function registerForPushNotificationsAsync(
       sound: msgBundled ?? "default",
       enableVibrate: true,
     });
+
+    // Canal LLAMADAS — creado aquí en JS como inicialización base.
+    // CallNotificationService.kt lo recrea con USAGE_NOTIFICATION_RINGTONE cuando llega
+    // un FCM (background/foreground). Esta versión JS garantiza que el canal exista
+    // ANTES de la primera llamada, para que el Expo push pueda usar "llamadas_v2"
+    // incluso cuando la app estaba cerrada y nunca recibió un FCM.
+    await Notifications.deleteNotificationChannelAsync("llamadas_v2").catch(() => {});
+    await Notifications.setNotificationChannelAsync("llamadas_v2", {
+      name: "Llamadas entrantes",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 250, 500, 250, 500],
+      enableVibrate: true,
+      sound: callBundled ?? "ring1.wav",
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+    });
+    // Limpiar canales viejos que ya no se usan
+    await Notifications.deleteNotificationChannelAsync("llamadas").catch(() => {});
   }
 
   const { status: existing } = await Notifications.getPermissionsAsync();
