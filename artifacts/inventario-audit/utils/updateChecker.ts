@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as BackgroundFetch from "expo-background-fetch";
 import * as Notifications from "expo-notifications";
@@ -18,16 +19,21 @@ export function registerUpdateCallback(fn: (info: UpdateInfo) => void) {
 }
 
 export function currentVersionCode(): number {
+  // Fuente 1: expo-application → nativeBuildVersion es el versionCode real del APK instalado
+  // En Android siempre es un número entero como string ("42"). Es la fuente más confiable.
+  const nativeBuild = Application.nativeBuildVersion;
+  if (nativeBuild) {
+    const parsed = parseInt(nativeBuild, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+
+  // Fuente 2: Constants.expoConfig (disponible en builds standalone, puede fallar en ciertos entornos)
   const fromConfig = Constants.expoConfig?.android?.versionCode as number | undefined;
   if (typeof fromConfig === "number" && fromConfig > 0) return fromConfig;
 
+  // Fuente 3: manifest2 (Expo Go / legacy)
   const fromManifest2 = Constants.manifest2?.extra?.expoClient?.android?.versionCode as number | undefined;
   if (typeof fromManifest2 === "number" && fromManifest2 > 0) return fromManifest2;
-
-  const fromManifest = (Constants as unknown as Record<string, unknown>)?.manifest as Record<string, unknown> | undefined;
-  const fromManifestCode = fromManifest?.android as Record<string, unknown> | undefined;
-  const legacyCode = fromManifestCode?.versionCode as number | undefined;
-  if (typeof legacyCode === "number" && legacyCode > 0) return legacyCode;
 
   return 0;
 }
