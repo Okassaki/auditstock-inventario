@@ -82,6 +82,7 @@ function RootLayoutNav() {
         fromName: data.fromName ?? callerId,
         type: (data.callType as "audio" | "video") ?? "audio",
         roomId: data.roomId ?? "",
+        offerId: data.offerId,
       });
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -202,6 +203,7 @@ function RootLayoutNav() {
           fromName: data.fromName ?? callerId,
           type: (data.callType as "audio" | "video") ?? "audio",
           roomId: data.roomId,
+          offerId: data.offerId,
         };
         triggerIncomingCallFromNotification(info);
         return;
