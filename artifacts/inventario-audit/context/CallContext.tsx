@@ -23,6 +23,9 @@ import {
   setOfferId,
   hangupWebRTC,
   setMicMuted,
+  setSpeakerOn,
+  stopRingback,
+  flipCamera as webrtcFlipCamera,
   type WebRTCStreams,
 } from "@/utils/webrtcManager";
 import { registerWsHandler } from "@/utils/chatSocket";
@@ -53,11 +56,14 @@ interface CallContextValue {
   activeCall: ActiveCallInfo | null;
   webrtcStreams: WebRTCStreams;
   isMuted: boolean;
+  isSpeaker: boolean;
   initiateCall: (peerId: string, peerName: string, type: CallType) => void;
   acceptCall: () => void;
   rejectCall: () => void;
   endCall: () => void;
   toggleMute: () => void;
+  toggleSpeaker: () => void;
+  flipCamera: () => void;
   triggerIncomingCallFromNotification: (info: IncomingCallInfo) => void;
 }
 
@@ -67,11 +73,14 @@ const CallContext = createContext<CallContextValue>({
   activeCall: null,
   webrtcStreams: { local: null, remote: null },
   isMuted: false,
+  isSpeaker: false,
   initiateCall: () => {},
   acceptCall: () => {},
   rejectCall: () => {},
   endCall: () => {},
   toggleMute: () => {},
+  toggleSpeaker: () => {},
+  flipCamera: () => {},
   triggerIncomingCallFromNotification: () => {},
 });
 
@@ -108,6 +117,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     remote: null,
   });
   const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaker, setIsSpeaker] = useState(false);
 
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vibrateInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -263,11 +273,36 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setActiveCall(null);
     setWebrtcStreams({ local: null, remote: null });
     setIsMuted(false);
+    setIsSpeaker(false);
   }, [stopRinging]);
 
   const onRemoteHangup = useCallback(() => {
     endCall();
   }, [endCall]);
+
+  // Cuando la llamada pasa a activa: parar el ringback del caller y sincronizar altavoz
+  const prevCallState = useRef<CallState>("idle");
+  useEffect(() => {
+    if (callState === "active" && prevCallState.current === "outgoing") {
+      // El caller ya no escucha "ring ring" — la llamada se contestó
+      stopRingback();
+      // Inicializar botón de altavoz según tipo de llamada
+      setIsSpeaker(activeCall?.type === "video");
+    }
+    prevCallState.current = callState;
+  }, [callState, activeCall?.type]);
+
+  const toggleSpeaker = useCallback(() => {
+    setIsSpeaker((prev) => {
+      const next = !prev;
+      setSpeakerOn(next);
+      return next;
+    });
+  }, []);
+
+  const doFlipCamera = useCallback(() => {
+    webrtcFlipCamera().catch(() => {});
+  }, []);
 
   // ── Acciones públicas ─────────────────────────────────────────────────────────
 
@@ -479,11 +514,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         activeCall,
         webrtcStreams,
         isMuted,
+        isSpeaker,
         initiateCall,
         acceptCall,
         rejectCall,
         endCall: endCallWithSignal,
         toggleMute,
+        toggleSpeaker,
+        flipCamera: doFlipCamera,
         triggerIncomingCallFromNotification,
       }}
     >
