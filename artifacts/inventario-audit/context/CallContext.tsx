@@ -62,10 +62,16 @@ function buildJitsiUrl(roomId: string, type: CallType, displayName: string): str
   const room = `AuditStk${roomId}`;
   const params = [
     "config.prejoinPageEnabled=false",
+    "config.prejoinConfig.enabled=false",
     `config.startWithVideoMuted=${type === "audio" ? "true" : "false"}`,
     "config.startWithAudioMuted=false",
     "config.disableDeepLinking=true",
     "config.disableInviteFunctions=true",
+    "config.disableLobby=true",
+    "config.enableLobbyChat=false",
+    "config.lobby.enabled=false",
+    "config.requireDisplayName=false",
+    "config.enableNoAudioDetection=false",
     "config.toolbarButtons=[\"microphone\",\"camera\",\"hangup\",\"tileview\"]",
     `userInfo.displayName="${encodeURIComponent(displayName)}"`,
   ].join("&");
