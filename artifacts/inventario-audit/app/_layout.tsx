@@ -7,9 +7,11 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as IntentLauncher from "expo-intent-launcher";
 import * as Notifications from "expo-notifications";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import React, { useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
@@ -104,6 +106,25 @@ function RootLayoutNav() {
     }
     return () => { disconnectChatSocket(); };
   }, [storeConfig, bossAuthenticated, storeLoading, bossLoading]);
+
+  // Solicitar exclusión de optimización de batería (Android) — solo la primera vez.
+  // Muestra un diálogo del sistema con un solo toque "Permitir".
+  // Sin esto, Android puede matar el proceso de FCM y las llamadas no llegan con la app cerrada.
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    if (storeLoading || bossLoading) return;
+    const isConfigured = bossAuthenticated || !!storeConfig;
+    if (!isConfigured) return;
+    AsyncStorage.getItem("battery_opt_asked").then((val) => {
+      if (val) return;
+      AsyncStorage.setItem("battery_opt_asked", "true").catch(() => {});
+      IntentLauncher.startActivityAsync(
+        "android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        { data: "package:com.auditstock.inventario" },
+      ).catch(() => {});
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLoading, bossLoading, bossAuthenticated, storeConfig]);
 
   // Registrar push token cuando la tienda o el jefe están listos
   useEffect(() => {
