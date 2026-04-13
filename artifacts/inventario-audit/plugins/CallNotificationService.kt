@@ -126,13 +126,19 @@ class CallNotificationService : FirebaseMessagingService() {
         val isVideo  = callType == "video"
         val inForeground = isAppInForeground()
 
+        // Si la app está en primer plano, el overlay JS maneja la llamada completamente:
+        // muestra la pantalla y toca el ringtone configurado por el usuario.
+        // No mostrar notificación nativa → evita que Android reproduzca cualquier
+        // sonido del sistema que interfiera (setSilent(true) es ignorado en CATEGORY_CALL).
+        if (inForeground) return
+
         val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Siempre recrear el canal con RINGTONE correcto
         recreateCallChannel(notifManager)
 
-        // Solo despertar pantalla si la app está en background/cerrada
-        val wakeLock = if (!inForeground) acquireWakeLock() else null
+        // Despertar pantalla si la app está en background/cerrada
+        val wakeLock = acquireWakeLock()
 
         val pFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
