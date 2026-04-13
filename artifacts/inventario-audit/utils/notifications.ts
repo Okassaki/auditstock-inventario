@@ -58,8 +58,10 @@ export async function registerForPushNotificationsAsync(
       }
     } catch {}
 
+    // Sólo gestionamos el canal de MENSAJES desde el lado JS/Expo.
+    // El canal "llamadas" es gestionado EXCLUSIVAMENTE por CallNotificationService.kt
+    // para garantizar que use USAGE_NOTIFICATION_RINGTONE y el tono correcto.
     await Notifications.deleteNotificationChannelAsync("mensajes").catch(() => {});
-    await Notifications.deleteNotificationChannelAsync("llamadas").catch(() => {});
     await Notifications.setNotificationChannelAsync("mensajes", {
       name: "Mensajes",
       importance: Notifications.AndroidImportance.MAX,
@@ -67,15 +69,6 @@ export async function registerForPushNotificationsAsync(
       lightColor: "#00D4FF",
       sound: msgBundled ?? "default",
       enableVibrate: true,
-    });
-    await Notifications.setNotificationChannelAsync("llamadas", {
-      name: "Llamadas",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 500, 250, 500],
-      lightColor: "#8B5CF6",
-      sound: callBundled ?? "default",
-      enableVibrate: true,
-      audioAttributesUsage: 6 as any, // AudioAttributes.USAGE_NOTIFICATION_RINGTONE
     });
   }
 
