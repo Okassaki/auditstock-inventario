@@ -57,8 +57,10 @@ export function ActiveCallOverlay() {
           </Text>
         </View>
 
-        {/* WebView Jitsi */}
-        {!isOutgoing ? (
+        {/* WebView Jitsi — siempre cargada, incluso en estado "outgoing".
+            Esto asegura que el llamante entra a la sala al mismo tiempo que el receptor,
+            evitando el error "waiting for moderator" de Jitsi. */}
+        <View style={s.webviewContainer}>
           <WebView
             style={s.webview}
             source={{ uri: activeCall.jitsiUrl }}
@@ -76,19 +78,21 @@ export function ActiveCallOverlay() {
                 : undefined
             }
           />
-        ) : (
-          <View style={s.waitingScreen}>
-            <View style={s.waitingAvatar}>
-              <Feather
-                name={activeCall.type === "video" ? "video" : "phone-call"}
-                size={48}
-                color="#fff"
-              />
+          {/* Capa "Llamando..." mientras espera que el receptor conteste */}
+          {isOutgoing && (
+            <View style={s.callingOverlay}>
+              <View style={s.waitingAvatar}>
+                <Feather
+                  name={activeCall.type === "video" ? "video" : "phone-call"}
+                  size={48}
+                  color="#fff"
+                />
+              </View>
+              <Text style={s.waitingName}>{activeCall.peerName}</Text>
+              <Text style={s.waitingText}>Llamando...</Text>
             </View>
-            <Text style={s.waitingName}>{activeCall.peerName}</Text>
-            <Text style={s.waitingText}>Llamando...</Text>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Botón colgar */}
         <View style={[s.footer, { paddingBottom: insets.bottom + 16 }]}>
@@ -116,8 +120,15 @@ const s = StyleSheet.create({
   peerInfo: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
   peerName: { color: "#fff", fontSize: 17, fontWeight: "600", flex: 1 },
   status: { color: "#8B9AB5", fontSize: 14 },
+  webviewContainer: { flex: 1, position: "relative" },
   webview: { flex: 1 },
-  waitingScreen: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16 },
+  callingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#050C1A",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+  },
   waitingAvatar: {
     width: 120,
     height: 120,
