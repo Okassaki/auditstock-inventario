@@ -1,3 +1,8 @@
+/**
+ * CallContext — máquina de estados para llamadas de audio/video.
+ * Usa WebRTC nativo (sin Jitsi, sin WebView).
+ * Señalización via WebSocket + HTTP fallback.
+ */
 import React, {
   createContext,
   useCallback,
@@ -11,6 +16,15 @@ import { playCallRingtone, stopRingtone } from "@/utils/ringtone";
 import { useBossConfig } from "./BossConfigContext";
 import { useStoreConfig } from "./StoreConfigContext";
 import { API_URL } from "@/utils/api";
+import {
+  initCallerWebRTC,
+  initCalleeWebRTC,
+  callerPollForAnswer,
+  setOfferId,
+  hangupWebRTC,
+  setMicMuted,
+  type WebRTCStreams,
+} from "@/utils/webrtcManager";
 
 export type CallType = "audio" | "video";
 export type CallState = "idle" | "outgoing" | "incoming" | "active";
@@ -21,6 +35,7 @@ export interface IncomingCallInfo {
   type: CallType;
   roomId: string;
   offerId?: string;
+  sdpOffer?: string;
 }
 
 export interface ActiveCallInfo {
@@ -28,7 +43,6 @@ export interface ActiveCallInfo {
   peerName: string;
   type: CallType;
   roomId: string;
-  jitsiUrl: string;
   offerId?: string;
 }
 
@@ -36,10 +50,13 @@ interface CallContextValue {
   callState: CallState;
   incomingCall: IncomingCallInfo | null;
   activeCall: ActiveCallInfo | null;
+  webrtcStreams: WebRTCStreams;
+  isMuted: boolean;
   initiateCall: (peerId: string, peerName: string, type: CallType) => void;
   acceptCall: () => void;
   rejectCall: () => void;
   endCall: () => void;
+  toggleMute: () => void;
   triggerIncomingCallFromNotification: (info: IncomingCallInfo) => void;
 }
 
@@ -47,36 +64,17 @@ const CallContext = createContext<CallContextValue>({
   callState: "idle",
   incomingCall: null,
   activeCall: null,
+  webrtcStreams: { local: null, remote: null },
+  isMuted: false,
   initiateCall: () => {},
   acceptCall: () => {},
   rejectCall: () => {},
   endCall: () => {},
+  toggleMute: () => {},
   triggerIncomingCallFromNotification: () => {},
 });
 
-const JITSI_SERVER = "https://meet.jit.si";
-const OUTGOING_POLL_MS = 2000;
 const INCOMING_POLL_MS = 3000;
-
-function buildJitsiUrl(roomId: string, type: CallType, displayName: string): string {
-  const room = `AuditStk${roomId}`;
-  const params = [
-    "config.prejoinPageEnabled=false",
-    "config.prejoinConfig.enabled=false",
-    `config.startWithVideoMuted=${type === "audio" ? "true" : "false"}`,
-    "config.startWithAudioMuted=false",
-    "config.disableDeepLinking=true",
-    "config.disableInviteFunctions=true",
-    "config.disableLobby=true",
-    "config.enableLobbyChat=false",
-    "config.lobby.enabled=false",
-    "config.requireDisplayName=false",
-    "config.enableNoAudioDetection=false",
-    "config.toolbarButtons=[\"microphone\",\"camera\",\"hangup\",\"tileview\"]",
-    `userInfo.displayName="${encodeURIComponent(displayName)}"`,
-  ].join("&");
-  return `${JITSI_SERVER}/${room}#${params}`;
-}
 
 async function apiPost(path: string, body: object): Promise<unknown> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -97,17 +95,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const { bossAuthenticated } = useBossConfig();
 
   const myCode = bossAuthenticated ? "JEFE" : (storeConfig?.codigo ?? null);
-  const myName = bossAuthenticated ? "Jefe" : (storeConfig?.nombre ?? myCode ?? "");
+  const myName = bossAuthenticated
+    ? "Jefe"
+    : (storeConfig?.nombre ?? myCode ?? "");
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [incomingCall, setIncomingCall] = useState<IncomingCallInfo | null>(null);
   const [activeCall, setActiveCall] = useState<ActiveCallInfo | null>(null);
+  const [webrtcStreams, setWebrtcStreams] = useState<WebRTCStreams>({
+    local: null,
+    remote: null,
+  });
+  const [isMuted, setIsMuted] = useState(false);
 
-  const outgoingOfferIdRef = useRef<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vibrateInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const callStateRef = useRef<CallState>("idle");
   callStateRef.current = callState;
+
+  // ── Ringtone / vibración ──────────────────────────────────────────────────────
 
   const stopRinging = useCallback(() => {
     stopRingtone().catch(() => {});
@@ -121,9 +127,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const startRinging = useCallback(() => {
     playCallRingtone().catch(() => {});
     if (Platform.OS === "android") {
-      vibrateInterval.current = setInterval(() => Vibration.vibrate([0, 500, 200, 500]), 1200);
+      vibrateInterval.current = setInterval(
+        () => Vibration.vibrate([0, 500, 200, 500]),
+        1200
+      );
     }
   }, []);
+
+  // ── Polling ───────────────────────────────────────────────────────────────────
 
   const clearPoll = useCallback(() => {
     if (pollTimerRef.current) {
@@ -132,35 +143,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Polling para llamadas salientes: espera confirmación del destinatario
-  const pollOutgoing = useCallback(
-    (offerId: string) => {
-      clearPoll();
-      const tick = async () => {
-        if (callStateRef.current !== "outgoing") return;
-        try {
-          const data = (await apiGet(`/calls/status/${offerId}`)) as { response: string };
-          if (data.response === "accepted") {
-            const offer = outgoingOfferIdRef.current;
-            if (!offer) return;
-            setCallState("active");
-            return;
-          }
-          if (data.response === "rejected" || data.response === "expired" || data.response === "cancelled") {
-            stopRingtone().catch(() => {});
-            setCallState("idle");
-            setActiveCall(null);
-            return;
-          }
-        } catch {}
-        pollTimerRef.current = setTimeout(tick, OUTGOING_POLL_MS);
-      };
-      pollTimerRef.current = setTimeout(tick, OUTGOING_POLL_MS);
-    },
-    [clearPoll],
-  );
-
-  // Polling para llamadas entrantes: fallback si el push no llegó
   const pollIncoming = useCallback(() => {
     clearPoll();
     const tick = async () => {
@@ -168,7 +150,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       try {
         const data = await apiGet(`/calls/incoming/${myCode}`);
         if (data && typeof data === "object") {
-          const offer = data as { offerId?: string; from?: string; fromName?: string; callType?: string; roomId?: string };
+          const offer = data as {
+            offerId?: string;
+            from?: string;
+            fromName?: string;
+            callType?: string;
+            roomId?: string;
+            sdpOffer?: string;
+          };
           if (offer.offerId && offer.from && offer.roomId) {
             setIncomingCall({
               from: offer.from,
@@ -176,6 +165,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               type: (offer.callType as CallType) ?? "audio",
               roomId: offer.roomId,
               offerId: offer.offerId,
+              sdpOffer: offer.sdpOffer,
             });
             setCallState("incoming");
             startRinging();
@@ -188,48 +178,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     pollTimerRef.current = setTimeout(tick, INCOMING_POLL_MS);
   }, [clearPoll, myCode, startRinging]);
 
-  // Inicia el polling según el estado
   useEffect(() => {
     if (callState === "idle" && myCode) {
       pollIncoming();
-    } else if (callState === "outgoing" && outgoingOfferIdRef.current) {
-      pollOutgoing(outgoingOfferIdRef.current);
     } else {
       clearPoll();
     }
     return clearPoll;
-  }, [callState, myCode, pollIncoming, pollOutgoing, clearPoll]);
+  }, [callState, myCode, pollIncoming, clearPoll]);
 
-  // Cuando hay una llamada entrante (sonando), monitorear si el llamante canceló.
-  // Si el offer pasa a "cancelled" o "expired" → dejar de sonar automáticamente.
-  const incomingOfferId = incomingCall?.offerId ?? null;
-  useEffect(() => {
-    if (callState !== "incoming" || !incomingOfferId) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-
-    const tick = async () => {
-      if (cancelled) return;
-      try {
-        const data = (await apiGet(`/calls/status/${incomingOfferId}`)) as { response: string };
-        if (data.response === "cancelled" || data.response === "expired") {
-          stopRinging();
-          setIncomingCall(null);
-          setCallState("idle");
-          return;
-        }
-      } catch {}
-      if (!cancelled) timer = setTimeout(tick, 2000);
-    };
-
-    timer = setTimeout(tick, 2000);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [callState, incomingOfferId, stopRinging]);
-
-  // Reanudar polling al volver al frente
+  // Al volver al frente, reanudar polling
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active" && callStateRef.current === "idle" && myCode) {
@@ -239,74 +197,242 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [myCode, pollIncoming]);
 
+  // Mientras suena llamada entrante, detectar si el llamante canceló
+  const incomingOfferId = incomingCall?.offerId ?? null;
+  useEffect(() => {
+    if (callState !== "incoming" || !incomingOfferId) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = async () => {
+      if (!alive) return;
+      try {
+        const data = (await apiGet(`/calls/status/${incomingOfferId}`)) as {
+          response: string;
+        };
+        if (data.response === "cancelled" || data.response === "expired") {
+          stopRinging();
+          setIncomingCall(null);
+          setCallState("idle");
+          return;
+        }
+      } catch {}
+      if (alive) timer = setTimeout(tick, 2000);
+    };
+
+    timer = setTimeout(tick, 2000);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [callState, incomingOfferId, stopRinging]);
+
+  // ── WebRTC callbacks ──────────────────────────────────────────────────────────
+
+  const onStreams = useCallback((streams: WebRTCStreams) => {
+    setWebrtcStreams({ ...streams });
+  }, []);
+
+  // ── endCall (limpieza central) ────────────────────────────────────────────────
+
   const endCall = useCallback(() => {
     stopRinging();
+    hangupWebRTC();
     setCallState("idle");
     setIncomingCall(null);
     setActiveCall(null);
-    outgoingOfferIdRef.current = null;
+    setWebrtcStreams({ local: null, remote: null });
+    setIsMuted(false);
   }, [stopRinging]);
+
+  const onRemoteHangup = useCallback(() => {
+    endCall();
+  }, [endCall]);
+
+  // ── Acciones públicas ─────────────────────────────────────────────────────────
 
   const initiateCall = useCallback(
     (peerId: string, peerName: string, type: CallType) => {
       if (callState !== "idle" || !myCode) return;
       const roomId = `${Date.now()}`;
-      const jitsiUrl = buildJitsiUrl(roomId, type, myName);
-      setActiveCall({ peerId, peerName, type, roomId, jitsiUrl });
+
+      setActiveCall({ peerId, peerName, type, roomId });
       setCallState("outgoing");
-      apiPost("/calls/offer", {
-        from: myCode,
-        fromName: myName,
-        to: peerId,
-        callType: type,
-        roomId,
-      })
-        .then((res) => {
-          const r = res as { offerId?: string };
-          if (r.offerId) {
-            outgoingOfferIdRef.current = r.offerId;
-            pollOutgoing(r.offerId);
+
+      void (async () => {
+        try {
+          // 1. Capturar micrófono/cámara + crear SDP offer (sin offerId todavía)
+          const sdpOffer = await initCallerWebRTC({
+            myCode,
+            peerId,
+            callType: type,
+            onStreams,
+            onRemoteHangup,
+          });
+
+          // 2. Enviar call offer + SDP al servidor → obtener offerId
+          const res = (await apiPost("/calls/offer", {
+            from: myCode,
+            fromName: myName,
+            to: peerId,
+            callType: type,
+            roomId,
+            sdpOffer,
+          })) as { offerId?: string };
+
+          if (!res.offerId) {
+            endCall();
+            return;
           }
-        })
-        .catch(() => {});
+
+          const offerId = res.offerId;
+
+          // 3. Actualizar offerId en webrtcManager (flush ICE buffereados)
+          setOfferId(offerId);
+
+          // 4. Actualizar estado
+          setActiveCall((prev) => (prev ? { ...prev, offerId } : prev));
+
+          // 5. Esperar que el destinatario acepte (poll cada 2s)
+          let pollActive = true;
+          const pollOutgoing = async () => {
+            while (pollActive && callStateRef.current === "outgoing") {
+              await new Promise((r) => setTimeout(r, 2000));
+              if (!pollActive || callStateRef.current !== "outgoing") break;
+              try {
+                const status = (await apiGet(`/calls/status/${offerId}`)) as {
+                  response: string;
+                };
+                if (status.response === "accepted") {
+                  setCallState("active");
+                  // Buscar SDP answer del callee (WS ya lo intentó, HTTP como fallback)
+                  void callerPollForAnswer(offerId);
+                  break;
+                }
+                if (
+                  status.response === "rejected" ||
+                  status.response === "expired" ||
+                  status.response === "cancelled"
+                ) {
+                  endCall();
+                  break;
+                }
+              } catch {}
+            }
+          };
+
+          void pollOutgoing();
+
+          // Limpiar poll al salir de outgoing (hangup)
+          const checkStopped = setInterval(() => {
+            if (callStateRef.current !== "outgoing") {
+              pollActive = false;
+              clearInterval(checkStopped);
+            }
+          }, 500);
+        } catch (err) {
+          console.warn("[call] Error iniciando llamada:", err);
+          endCall();
+        }
+      })();
     },
-    [callState, myCode, myName, pollOutgoing],
+    [callState, myCode, myName, onStreams, onRemoteHangup, endCall]
   );
 
   const acceptCall = useCallback(() => {
     if (!incomingCall || !myCode) return;
     stopRinging();
-    const jitsiUrl = buildJitsiUrl(incomingCall.roomId, incomingCall.type, myName);
-    setActiveCall({
-      peerId: incomingCall.from,
-      peerName: incomingCall.fromName,
-      type: incomingCall.type,
-      roomId: incomingCall.roomId,
-      jitsiUrl,
-    });
+
+    const snapshot = { ...incomingCall };
     setIncomingCall(null);
     setCallState("active");
-    if (incomingCall.offerId) {
-      apiPost("/calls/respond", { offerId: incomingCall.offerId, response: "accepted" }).catch(() => {});
+    setActiveCall({
+      peerId: snapshot.from,
+      peerName: snapshot.fromName,
+      type: snapshot.type,
+      roomId: snapshot.roomId,
+      offerId: snapshot.offerId,
+    });
+
+    if (snapshot.offerId) {
+      apiPost("/calls/respond", {
+        offerId: snapshot.offerId,
+        response: "accepted",
+      }).catch(() => {});
     }
-  }, [incomingCall, myCode, myName, stopRinging]);
+
+    void (async () => {
+      try {
+        let sdpOffer = snapshot.sdpOffer;
+
+        // Si el SDP no llegó en el push/poll, buscarlo en el servidor
+        // El endpoint /calls/signal/:offerId lo devuelve siempre (incluso después de aceptar)
+        if (!sdpOffer && snapshot.offerId) {
+          for (let i = 0; i < 6; i++) {
+            try {
+              const sig = (await fetch(
+                `${API_URL}/calls/signal/${snapshot.offerId}`
+              ).then((r) => r.json())) as { sdpOffer?: string } | null;
+              if (sig?.sdpOffer) {
+                sdpOffer = sig.sdpOffer;
+                break;
+              }
+            } catch {}
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        }
+
+        if (!sdpOffer || !snapshot.offerId) {
+          console.warn("[call] SDP offer no disponible, cancelando");
+          endCall();
+          return;
+        }
+
+        await initCalleeWebRTC({
+          myCode,
+          peerId: snapshot.from,
+          offerId: snapshot.offerId,
+          callType: snapshot.type,
+          sdpOffer,
+          onStreams,
+          onRemoteHangup,
+        });
+      } catch (err) {
+        console.warn("[call] Error aceptando llamada:", err);
+        endCall();
+      }
+    })();
+  }, [incomingCall, myCode, onStreams, onRemoteHangup, stopRinging, endCall]);
 
   const rejectCall = useCallback(() => {
-    if (!incomingCall || !myCode) return;
+    if (!incomingCall) return;
     stopRinging();
     if (incomingCall.offerId) {
-      apiPost("/calls/respond", { offerId: incomingCall.offerId, response: "rejected" }).catch(() => {});
+      apiPost("/calls/respond", {
+        offerId: incomingCall.offerId,
+        response: "rejected",
+      }).catch(() => {});
     }
     setIncomingCall(null);
     setCallState("idle");
-  }, [incomingCall, myCode, stopRinging]);
+  }, [incomingCall, stopRinging]);
 
   const endCallWithSignal = useCallback(() => {
-    if (callState === "outgoing" && outgoingOfferIdRef.current) {
-      apiPost(`/calls/cancel/${outgoingOfferIdRef.current}`, {}).catch(() => {});
+    // Si estaba llamando, señalizar cancelación al servidor
+    const info = activeCall;
+    if (callStateRef.current === "outgoing" && info?.offerId) {
+      apiPost(`/calls/cancel/${info.offerId}`, {}).catch(() => {});
     }
     endCall();
-  }, [callState, endCall]);
+  }, [activeCall, endCall]);
+
+  const toggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      setMicMuted(next);
+      return next;
+    });
+  }, []);
 
   const triggerIncomingCallFromNotification = useCallback(
     (info: IncomingCallInfo) => {
@@ -317,7 +443,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return "incoming";
       });
     },
-    [startRinging],
+    [startRinging]
   );
 
   return (
@@ -326,10 +452,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         callState,
         incomingCall,
         activeCall,
+        webrtcStreams,
+        isMuted,
         initiateCall,
         acceptCall,
         rejectCall,
         endCall: endCallWithSignal,
+        toggleMute,
         triggerIncomingCallFromNotification,
       }}
     >
