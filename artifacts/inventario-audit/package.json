@@ -70,6 +70,7 @@
     "expo-sharing": "^14.0.8",
     "expo-sqlite": "^16.0.10",
     "expo-task-manager": "~14.0.9",
+    "react-native-incall-manager": "^4.2.1",
     "react-native-webrtc": "^124.0.4",
     "xlsx": "^0.18.5"
   }
