@@ -20,11 +20,12 @@ import java.io.File
 class CallNotificationService : FirebaseMessagingService() {
 
     companion object {
-        const val NOTIF_ID    = 9001
-        const val CHANNEL_ID  = "llamadas"
+        const val NOTIF_ID      = 9001
+        // ID nuevo para evitar que Android restaure ajustes de audio incorrectos
+        // del canal antiguo "llamadas" (que fue creado con USAGE_NOTIFICATION en vez de RINGTONE)
+        const val CHANNEL_ID    = "llamadas_v2"
         const val ACTION_REJECT = "com.auditstock.inventario.REJECT_CALL"
 
-        // WakeLock tag
         private const val WAKE_TAG = "AuditStock:CallWake"
     }
 
@@ -76,7 +77,9 @@ class CallNotificationService : FirebaseMessagingService() {
         val callSound  = readCallSound()
         val soundUri   = callSoundToUri(callSound)
 
-        // Borrar canal anterior (si existe) para asegurar atributos de audio correctos
+        // Limpiar canal viejo "llamadas" (tenía USAGE_NOTIFICATION incorrecto)
+        notifManager.deleteNotificationChannel("llamadas")
+        // Borrar el canal actual si existe (empezar limpio)
         notifManager.deleteNotificationChannel(CHANNEL_ID)
 
         val audioAttr = AudioAttributes.Builder()
