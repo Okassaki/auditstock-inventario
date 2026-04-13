@@ -137,7 +137,12 @@ export async function playCallRingtone(): Promise<void> {
   const tone = await getCallTone();
   if (tone === "silent") return;
   await stopCurrent();
-  await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: true });
+  await Audio.setAudioModeAsync({
+    playsInSilentModeIOS: true,
+    staysActiveInBackground: true,
+    shouldDuckAndroid: false,
+    playThroughEarpieceAndroid: false, // altavoz, no auricular
+  });
 
   let sound: Audio.Sound;
   if (tone === "custom") {
