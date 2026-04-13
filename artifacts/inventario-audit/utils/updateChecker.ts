@@ -19,19 +19,23 @@ export function registerUpdateCallback(fn: (info: UpdateInfo) => void) {
 }
 
 export function currentVersionCode(): number {
-  // Fuente 1: expo-application → nativeBuildVersion es el versionCode real del APK instalado
-  // En Android siempre es un número entero como string ("42"). Es la fuente más confiable.
+  // Fuente 1: extra.versionCode — el campo más confiable en builds standalone.
+  // Se inyecta directamente desde app.json["extra"]["versionCode"] al momento de compilar.
+  const fromExtra = Constants.expoConfig?.extra?.versionCode as number | undefined;
+  if (typeof fromExtra === "number" && fromExtra > 0) return fromExtra;
+
+  // Fuente 2: expo-application — lee el versionCode real del APK instalado (si está disponible).
   const nativeBuild = Application.nativeBuildVersion;
   if (nativeBuild) {
     const parsed = parseInt(nativeBuild, 10);
     if (!isNaN(parsed) && parsed > 0) return parsed;
   }
 
-  // Fuente 2: Constants.expoConfig (disponible en builds standalone, puede fallar en ciertos entornos)
+  // Fuente 3: Constants.expoConfig.android.versionCode
   const fromConfig = Constants.expoConfig?.android?.versionCode as number | undefined;
   if (typeof fromConfig === "number" && fromConfig > 0) return fromConfig;
 
-  // Fuente 3: manifest2 (Expo Go / legacy)
+  // Fuente 4: manifest2 (Expo Go / legacy)
   const fromManifest2 = Constants.manifest2?.extra?.expoClient?.android?.versionCode as number | undefined;
   if (typeof fromManifest2 === "number" && fromManifest2 > 0) return fromManifest2;
 
