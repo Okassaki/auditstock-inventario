@@ -1,15 +1,17 @@
 /**
  * WebRTC nativo para llamadas de audio/video.
  * Conexión peer-to-peer directa — sin Jitsi, sin WebView.
+ * InCallManager maneja ruteo de audio (auricular ↔ altavoz) y sensor de proximidad.
  *
  * Flujo del CALLER:
- *   1. initCallerWebRTC() → captura micrófono, crea SDP offer
+ *   1. initCallerWebRTC() → captura micrófono, crea SDP offer, InCallManager inicia ringback
  *   2. Enviar SDP al servidor junto con el call offer → obtener offerId
  *   3. setOfferId(offerId) → flush de ICE candidates que se habían buffeado
  *   4. callerPollForAnswer() → espera SDP answer del callee
+ *   5. stopRingback() cuando el callee acepta
  *
  * Flujo del CALLEE:
- *   1. initCalleeWebRTC(sdpOffer) → captura micrófono, crea SDP answer
+ *   1. initCalleeWebRTC(sdpOffer) → captura micrófono, crea SDP answer, InCallManager rutea a auricular
  *   2. Envía answer via WebSocket + HTTP fallback
  *   3. Intercambia ICE candidates via WebSocket
  */
@@ -19,7 +21,8 @@ import {
   RTCSessionDescription,
   mediaDevices,
 } from "react-native-webrtc";
-import type { MediaStream } from "react-native-webrtc";
+import type { MediaStream, MediaStreamTrack } from "react-native-webrtc";
+import InCallManager from "react-native-incall-manager";
 import { registerWsHandler, sendWsMessage } from "./chatSocket";
 import { API_URL } from "./api";
 
@@ -53,6 +56,7 @@ let myCode: string | null = null;
 let peerId: string | null = null;
 let currentOfferId: string | null = null;
 let myRole: "caller" | "callee" | null = null;
+let currentCallType: "audio" | "video" = "audio";
 
 // Buffer de ICE candidates generados ANTES de que tengamos el offerId del servidor
 const pendingIceCandidates: object[] = [];
@@ -96,6 +100,29 @@ function flushPendingIce() {
 export function setOfferId(offerId: string) {
   currentOfferId = offerId;
   flushPendingIce();
+}
+
+/** Cambia el ruteo de audio entre auricular y altavoz. */
+export function setSpeakerOn(on: boolean): void {
+  try {
+    InCallManager.setSpeakerphoneOn(on);
+  } catch {}
+}
+
+/** Para el tono de retorno (ring ring que escucha el que llama). */
+export function stopRingback(): void {
+  try {
+    InCallManager.stopRingback();
+  } catch {}
+}
+
+/** Rota entre cámara frontal y trasera durante una videollamada. */
+export async function flipCamera(): Promise<void> {
+  if (!localStream) return;
+  const videoTracks = localStream.getVideoTracks();
+  if (videoTracks.length === 0) return;
+  const track = videoTracks[0] as MediaStreamTrack & { _switchCamera?: () => void };
+  track._switchCamera?.();
 }
 
 function buildPeerConnection(): RTCPeerConnection {
@@ -174,8 +201,8 @@ async function handleWsMsg(msg: Record<string, unknown>): Promise<void> {
 
 /**
  * Inicia WebRTC como llamante.
- * NO requiere offerId todavía — buffeará ICE candidates hasta que llames setOfferId().
- * Retorna el SDP offer para enviarlo al servidor.
+ * Reproduce tono de retorno (ring ring) via InCallManager.
+ * Ruteo de audio: auricular para audio, altavoz para video.
  */
 export async function initCallerWebRTC(opts: {
   myCode: string;
@@ -186,8 +213,9 @@ export async function initCallerWebRTC(opts: {
 }): Promise<string> {
   myCode = opts.myCode;
   peerId = opts.peerId;
-  currentOfferId = null; // Se seteará después con setOfferId()
+  currentOfferId = null;
   myRole = "caller";
+  currentCallType = opts.callType;
   onStreams = opts.onStreams;
   onRemoteHangup = opts.onRemoteHangup;
   pendingIceCandidates.length = 0;
@@ -201,6 +229,17 @@ export async function initCallerWebRTC(opts: {
     offerToReceiveVideo: opts.callType === "video",
   });
   await pc.setLocalDescription(offer);
+
+  // InCallManager: inicia audio en modo llamada + tono de retorno para el caller
+  try {
+    InCallManager.start({
+      media: opts.callType === "video" ? "video" : "audio",
+      ringback: opts.callType === "audio" ? "_DTMF_" : "",
+    });
+    // Video → altavoz; Audio → auricular por defecto
+    InCallManager.setSpeakerphoneOn(opts.callType === "video");
+    InCallManager.setKeepScreenOn(true);
+  } catch {}
 
   wsUnsub = registerWsHandler(handleWsMsg);
   emitStreams();
@@ -250,6 +289,7 @@ export async function callerPollForAnswer(offerId: string): Promise<void> {
 
 /**
  * Acepta la llamada entrante como callee.
+ * InCallManager rutea audio a auricular (llamada de audio) o altavoz (video).
  */
 export async function initCalleeWebRTC(opts: {
   myCode: string;
@@ -264,6 +304,7 @@ export async function initCalleeWebRTC(opts: {
   peerId = opts.peerId;
   currentOfferId = opts.offerId;
   myRole = "callee";
+  currentCallType = opts.callType;
   onStreams = opts.onStreams;
   onRemoteHangup = opts.onRemoteHangup;
   pendingIceCandidates.length = 0;
@@ -277,6 +318,13 @@ export async function initCalleeWebRTC(opts: {
   );
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
+
+  // InCallManager: auricular para audio, altavoz para video
+  try {
+    InCallManager.start({ media: opts.callType === "video" ? "video" : "audio" });
+    InCallManager.setSpeakerphoneOn(opts.callType === "video");
+    InCallManager.setKeepScreenOn(true);
+  } catch {}
 
   const answerSdp = (answer as { sdp?: string }).sdp ?? "";
 
@@ -313,6 +361,7 @@ export function setMicMuted(muted: boolean): void {
 }
 
 export function hangupWebRTC(): void {
+  try { InCallManager.stop(); } catch {}
   wsUnsub?.();
   wsUnsub = null;
   pendingIceCandidates.length = 0;
@@ -325,6 +374,7 @@ export function hangupWebRTC(): void {
   peerId = null;
   currentOfferId = null;
   myRole = null;
+  currentCallType = "audio";
   onStreams = null;
   onRemoteHangup = null;
 }
