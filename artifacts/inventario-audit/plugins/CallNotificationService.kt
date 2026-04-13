@@ -9,6 +9,7 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -22,6 +23,9 @@ class CallNotificationService : FirebaseMessagingService() {
         const val NOTIF_ID    = 9001
         const val CHANNEL_ID  = "llamadas"
         const val ACTION_REJECT = "com.auditstock.inventario.REJECT_CALL"
+
+        // WakeLock tag
+        private const val WAKE_TAG = "AuditStock:CallWake"
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -62,25 +66,18 @@ class CallNotificationService : FirebaseMessagingService() {
     }
 
     /**
-     * Asegura que el canal "llamadas" exista con el sonido correcto.
-     * Si el canal existe pero tiene un sonido diferente al guardado, lo elimina y recrea.
+     * Siempre borra y recrea el canal "llamadas" para garantizar que se use
+     * USAGE_NOTIFICATION_RINGTONE (no USAGE_NOTIFICATION) y el tono correcto.
+     * Esto evita que un canal creado por Expo con atributos incorrectos persista.
      */
-    private fun ensureCallChannel(notifManager: NotificationManager) {
+    private fun recreateCallChannel(notifManager: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-        val callSound   = readCallSound()
-        val desiredUri  = callSoundToUri(callSound)
-        val desiredStr  = desiredUri?.toString()
+        val callSound  = readCallSound()
+        val soundUri   = callSoundToUri(callSound)
 
-        val existing   = notifManager.getNotificationChannel(CHANNEL_ID)
-        val currentStr = existing?.sound?.toString()
-
-        if (existing != null && currentStr == desiredStr) return
-
-        // Eliminar si existe con sonido diferente
-        if (existing != null) {
-            notifManager.deleteNotificationChannel(CHANNEL_ID)
-        }
+        // Borrar canal anterior (si existe) para asegurar atributos de audio correctos
+        notifManager.deleteNotificationChannel(CHANNEL_ID)
 
         val audioAttr = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
@@ -88,11 +85,32 @@ class CallNotificationService : FirebaseMessagingService() {
             .build()
 
         val ch = NotificationChannel(CHANNEL_ID, "Llamadas", NotificationManager.IMPORTANCE_HIGH)
-        ch.setSound(desiredUri, audioAttr)
+        ch.setSound(soundUri, audioAttr)
         ch.enableVibration(true)
-        ch.vibrationPattern = longArrayOf(0, 500, 250, 500)
+        ch.vibrationPattern = longArrayOf(0, 500, 250, 500, 250, 500)
         ch.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         notifManager.createNotificationChannel(ch)
+    }
+
+    /**
+     * Adquiere un WakeLock para despertar la pantalla cuando llega una llamada
+     * mientras el teléfono está en reposo / pantalla apagada.
+     */
+    @Suppress("DEPRECATION")
+    private fun acquireWakeLock(): PowerManager.WakeLock? {
+        return try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            // FULL_WAKE_LOCK enciende pantalla; ON_AFTER_RELEASE la mantiene unos segundos
+            val wl = pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK
+                    or PowerManager.ACQUIRE_CAUSES_WAKEUP
+                    or PowerManager.ON_AFTER_RELEASE,
+                WAKE_TAG
+            )
+            // Mantener despierto 30 s — suficiente para que el usuario vea/responda
+            wl.acquire(30_000L)
+            wl
+        } catch (_: Exception) { null }
     }
 
     private fun showFullScreenCallNotification(msgData: Map<String, String>) {
@@ -104,12 +122,22 @@ class CallNotificationService : FirebaseMessagingService() {
         val isVideo  = callType == "video"
 
         val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        ensureCallChannel(notifManager)
+
+        // Siempre recrear el canal con atributos de RINGTONE correctos
+        recreateCallChannel(notifManager)
+
+        // Despertar pantalla si está apagada/en reposo
+        val wakeLock = acquireWakeLock()
 
         val pFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
-        val launchBase = packageManager.getLaunchIntentForPackage(packageName) ?: return
-        launchBase.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        val launchBase = packageManager.getLaunchIntentForPackage(packageName) ?: run {
+            wakeLock?.release()
+            return
+        }
+        launchBase.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                           Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                           Intent.FLAG_ACTIVITY_SINGLE_TOP
         launchBase.putExtra("notifType",   "call_offer")
         launchBase.putExtra("notifAction", "accept")
         launchBase.putExtra("caller",      caller)
@@ -144,8 +172,9 @@ class CallNotificationService : FirebaseMessagingService() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(acceptPI)
             .setFullScreenIntent(fullScreenPI, true)
-            .setAutoCancel(true)
+            .setAutoCancel(false)
             .setOngoing(true)
+            .setTimeoutAfter(60_000L)  // auto-cancel después de 60 s si no hay respuesta
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setStyle(
@@ -160,5 +189,8 @@ class CallNotificationService : FirebaseMessagingService() {
         }
 
         notifManager.notify(NOTIF_ID, builder.build())
+
+        // Liberar WakeLock — Android ya se encargó de mostrar la notificación
+        wakeLock?.release()
     }
 }
