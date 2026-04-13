@@ -24,7 +24,7 @@
     "android": {
       "package": "com.auditstock.inventario",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 42,
+      "versionCode": 43,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
