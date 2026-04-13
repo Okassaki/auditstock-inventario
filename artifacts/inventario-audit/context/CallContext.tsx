@@ -25,6 +25,7 @@ import {
   setMicMuted,
   type WebRTCStreams,
 } from "@/utils/webrtcManager";
+import { registerWsHandler } from "@/utils/chatSocket";
 
 export type CallType = "audio" | "video";
 export type CallState = "idle" | "outgoing" | "incoming" | "active";
@@ -112,6 +113,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const vibrateInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const callStateRef = useRef<CallState>("idle");
   callStateRef.current = callState;
+  // Guarda el offerId tan pronto llega del servidor (antes de que el state se actualice)
+  const outgoingOfferIdRef = useRef<string | null>(null);
 
   // ── Ringtone / vibración ──────────────────────────────────────────────────────
 
@@ -227,6 +230,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
   }, [callState, incomingOfferId, stopRinging]);
 
+  // Escuchar WS "call_cancelled" para dismiss instantáneo sin esperar el poll HTTP
+  useEffect(() => {
+    const unsub = registerWsHandler((msg) => {
+      if (
+        msg.type === "call_cancelled" &&
+        callStateRef.current === "incoming" &&
+        msg.offerId === incomingCall?.offerId
+      ) {
+        stopRinging();
+        setIncomingCall(null);
+        setCallState("idle");
+      }
+    });
+    return unsub;
+  }, [incomingCall?.offerId, stopRinging]);
+
   // ── WebRTC callbacks ──────────────────────────────────────────────────────────
 
   const onStreams = useCallback((streams: WebRTCStreams) => {
@@ -238,6 +257,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const endCall = useCallback(() => {
     stopRinging();
     hangupWebRTC();
+    outgoingOfferIdRef.current = null;
     setCallState("idle");
     setIncomingCall(null);
     setActiveCall(null);
@@ -287,10 +307,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
           const offerId = res.offerId;
 
-          // 3. Actualizar offerId en webrtcManager (flush ICE buffereados)
+          // 3. Guardar en ref INMEDIATAMENTE (antes de esperar el setState)
+          //    Esto evita la race condition si el usuario cancela enseguida.
+          outgoingOfferIdRef.current = offerId;
+
+          // 4. Actualizar offerId en webrtcManager (flush ICE buffereados)
           setOfferId(offerId);
 
-          // 4. Actualizar estado
+          // 5. Actualizar estado
           setActiveCall((prev) => (prev ? { ...prev, offerId } : prev));
 
           // 5. Esperar que el destinatario acepte (poll cada 2s)
@@ -418,13 +442,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, [incomingCall, stopRinging]);
 
   const endCallWithSignal = useCallback(() => {
-    // Si estaba llamando, señalizar cancelación al servidor
-    const info = activeCall;
-    if (callStateRef.current === "outgoing" && info?.offerId) {
-      apiPost(`/calls/cancel/${info.offerId}`, {}).catch(() => {});
+    // Usa ref para evitar race condition: el offerId puede llegar antes de que el
+    // estado se actualice, pero el ref se escribe de forma síncrona al recibirlo.
+    if (callStateRef.current === "outgoing" && outgoingOfferIdRef.current) {
+      apiPost(`/calls/cancel/${outgoingOfferIdRef.current}`, {}).catch(() => {});
     }
+    outgoingOfferIdRef.current = null;
     endCall();
-  }, [activeCall, endCall]);
+  }, [endCall]);
 
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
