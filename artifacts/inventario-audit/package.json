@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "buffer": "^6.0.3",
+    "expo-application": "^55.0.14",
     "expo-av": "~16.0.8",
     "expo-background-fetch": "~14.0.9",
     "expo-camera": "^17.0.10",
@@ -64,11 +65,11 @@
     "expo-device": "^8.0.10",
     "expo-document-picker": "^14.0.8",
     "expo-file-system": "^19.0.21",
+    "expo-intent-launcher": "~13.0.2",
     "expo-notifications": "^0.32.16",
     "expo-print": "^15.0.8",
     "expo-sharing": "^14.0.8",
     "expo-sqlite": "^16.0.10",
-    "expo-intent-launcher": "~13.0.2",
     "expo-task-manager": "~14.0.9",
     "react-native-webview": "^13.15.0",
     "xlsx": "^0.18.5"
