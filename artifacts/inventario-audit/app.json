@@ -24,7 +24,7 @@
     "android": {
       "package": "com.auditstock.inventario",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 41,
+      "versionCode": 42,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0F1E"
@@ -44,7 +44,9 @@
         "android.permission.CHANGE_NETWORK_STATE",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "android.permission.REQUEST_INSTALL_PACKAGES",
-        "android.permission.USE_FULL_SCREEN_INTENT"
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.WAKE_LOCK",
+        "android.permission.DISABLE_KEYGUARD"
       ]
     },
     "web": {
